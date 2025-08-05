@@ -16,6 +16,32 @@ function sanitizeName(name: string): string {
         .slice(0, 30); // limit length
 }
 
+export function listDatabases(): {
+    id: string,
+    dateCreated: number,
+    dateModified: number,
+    dateCreatedReadable: string,
+    dateModifiedReadable: string
+}[] {
+    const files = fs.readdirSync(DB_FOLDER);
+
+    return files
+        .filter(file => file.endsWith('.sqlite'))
+        .map(file => {
+            const id = path.basename(file, '.sqlite');
+            const fullPath = path.join(DB_FOLDER, file);
+            const stats = fs.statSync(fullPath);
+            return {
+                id,
+                dateCreated: stats.ctimeMs,
+                dateModified: stats.mtimeMs,
+                dateCreatedReadable: new Date(stats.ctimeMs).toLocaleString(),
+                dateModifiedReadable: new Date(stats.mtimeMs).toLocaleString()
+            };
+        });
+}
+
+
 export function createDatabase(displayName: string): { id: string, filePath: string } {
     const safeName = sanitizeName(displayName);
     const timestamp = Date.now();
@@ -24,15 +50,30 @@ export function createDatabase(displayName: string): { id: string, filePath: str
 
     const db = new Database(filePath);
     db.exec(`
-    CREATE TABLE IF NOT EXISTS entries (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      title TEXT,
-      content TEXT,
-      date_created INTEGER,
-      date_updated INTEGER,
-      hidden BOOLEAN DEFAULT 0
-    );
-  `);
+  CREATE TABLE IF NOT EXISTS entries (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT,
+    content TEXT,
+    date_created INTEGER,
+    date_updated INTEGER,
+    hidden BOOLEAN DEFAULT 0
+  );
+
+  CREATE TABLE IF NOT EXISTS column_metadata (
+    column_name TEXT PRIMARY KEY,
+    column_type TEXT
+  );
+`);
+    const insertMeta = db.prepare(`
+  INSERT OR REPLACE INTO column_metadata (column_name, column_type) VALUES (?, ?)
+`);
+
+    insertMeta.run('id', 'integer');
+    insertMeta.run('title', 'string');
+    insertMeta.run('content', 'rich_text');
+    insertMeta.run('date_created', 'date');
+    insertMeta.run('date_updated', 'date');
+    insertMeta.run('hidden', 'boolean');
     db.close();
 
     return { id, filePath };
@@ -45,15 +86,47 @@ export function getDatabaseContents(dbId: string) {
     }
 
     const db = new Database(filePath);
-    const stmt = db.prepare(`SELECT * FROM entries`);
-    const rows = stmt.all();
 
-    const columnInfo = db.prepare(`PRAGMA table_info(entries)`).all();
-    const columns = columnInfo.map((col: any) => ({
+    // Entries
+    const entryRows = db.prepare(`SELECT * FROM entries`).all();
+    const entryCols = db.prepare(`PRAGMA table_info(entries)`).all().map((col: any) => ({
+        name: col.name,
+        type: col.type,
+    }));
+
+    // Metadata
+    const metaRows = db.prepare(`SELECT * FROM column_metadata`).all();
+    const metaCols = db.prepare(`PRAGMA table_info(column_metadata)`).all().map((col: any) => ({
         name: col.name,
         type: col.type,
     }));
 
     db.close();
-    return { columns, rows };
+
+    return {
+        entries: {
+            columns: entryCols,
+            rows: entryRows,
+        },
+        column_metadata: {
+            columns: metaCols,
+            rows: metaRows,
+        }
+    };
 }
+
+export function deleteDatabase(dbId: string): { success: boolean; message: string } {
+    const filePath = path.join(DB_FOLDER, `${dbId}.sqlite`);
+
+    if (!fs.existsSync(filePath)) {
+        return { success: false, message: `Database '${dbId}' does not exist.` };
+    }
+
+    try {
+        fs.unlinkSync(filePath);
+        return { success: true, message: `Database '${dbId}' was deleted.` };
+    } catch (error: any) {
+        return { success: false, message: `Failed to delete database '${dbId}': ${error.message}` };
+    }
+}
+

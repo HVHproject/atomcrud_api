@@ -1,5 +1,5 @@
 import express from 'express';
-import { createDatabase, getDatabaseContents } from '../db/manager';
+import { createDatabase, deleteDatabase, getDatabaseContents, listDatabases } from '../db/manager';
 
 const router = express.Router();
 
@@ -29,5 +29,25 @@ router.get('/:dbId', (req, res) => {
         res.status(404).json({ error: 'Database not found', detail: String(err) });
     }
 });
+
+router.get('/', (req, res) => {
+    try {
+        const databases = listDatabases();
+        res.json(databases);
+    } catch (err) {
+        res.status(500).json({ error: 'Failed to list databases', detail: String(err) });
+    }
+});
+
+router.delete('/:dbId', (req, res) => {
+    const { dbId } = req.params;
+    const result = deleteDatabase(dbId);
+    if (result.success) {
+        res.status(200).json(result);
+    } else {
+        res.status(404).json(result);
+    }
+});
+
 
 export default router;
