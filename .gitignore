@@ -5,3 +5,4 @@ dist/
 db/*.db
 .vs/
 .vs/**/*
+*sqlite
