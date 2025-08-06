@@ -1,5 +1,5 @@
 import express from 'express';
-import { createDatabase, deleteDatabase, getDatabaseContents, listDatabases, renameDatabase } from '../db/database-functions';
+import { createDatabase, deleteDatabase, getDatabaseTables, listDatabases, renameDatabase } from '../db/database-functions';
 
 const router = express.Router();
 
@@ -23,7 +23,7 @@ router.get('/:dbId', (req, res) => {
     const { dbId } = req.params;
 
     try {
-        const data = getDatabaseContents(dbId);
+        const data = getDatabaseTables(dbId);
         res.json(data);
     } catch (err) {
         res.status(404).json({ error: 'Database not found', detail: String(err) });

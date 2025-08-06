@@ -39,11 +39,12 @@ export interface DatabaseMetadata {
     description?: string;
     tags?: string[];
     hidden?: boolean;
-    tables: {
-        name: string;
-        hidden: boolean;
-    }[];
-    columnTypes: {
-        [columnName: string]: ColumnType;
+    tables?: {
+        [tableName: string]: {
+            hidden: boolean;
+            columns: {
+                [columnName: string]: ColumnType;
+            };
+        };
     };
 }
