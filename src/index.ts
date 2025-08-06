@@ -1,6 +1,8 @@
 import express from 'express';
 import cors from 'cors';
 import dataRouter from './routes/database';
+import tableRouter from './routes/table';
+
 
 const app = express();
 app.use(cors());
@@ -8,6 +10,7 @@ app.use(express.json());
 
 // MOUNT HERE
 app.use('/api/database', dataRouter);
+app.use('/api/database', tableRouter);
 
 app.get('/', (req, res) => {
     res.send('API is running');
