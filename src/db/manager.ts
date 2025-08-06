@@ -8,6 +8,7 @@ if (!fs.existsSync(DB_FOLDER)) {
     fs.mkdirSync(DB_FOLDER);
 }
 
+// Ensures clean database names
 function sanitizeName(name: string): string {
     return name
         .toLowerCase()
@@ -16,6 +17,7 @@ function sanitizeName(name: string): string {
         .slice(0, 30); // limit length
 }
 
+// Lists all databases
 export function listDatabases(): {
     id: string,
     dateCreated: number,
@@ -41,7 +43,7 @@ export function listDatabases(): {
         });
 }
 
-
+// Creates a database with a standard format
 export function createDatabase(displayName: string): { id: string, filePath: string } {
     const safeName = sanitizeName(displayName);
     const timestamp = Date.now();
@@ -79,6 +81,7 @@ export function createDatabase(displayName: string): { id: string, filePath: str
     return { id, filePath };
 }
 
+// Gets all tables from the database
 export function getDatabaseContents(dbId: string) {
     const filePath = path.join(DB_FOLDER, `${dbId}.sqlite`);
     if (!fs.existsSync(filePath)) {
@@ -115,6 +118,22 @@ export function getDatabaseContents(dbId: string) {
     };
 }
 
+// Renames the database file
+export function renameDatabase(oldId: string, newDisplayName: string): { oldId: string, newId: string, filePath: string } {
+    const oldFilePath = path.join(DB_FOLDER, `${oldId}.sqlite`);
+    if (!fs.existsSync(oldFilePath)) throw new Error(`Database '${oldId}' does not exist.`);
+
+    const safeName = sanitizeName(newDisplayName);
+    const timestamp = Date.now();
+    const newId = `${safeName}_${timestamp}`;
+    const newFilePath = path.join(DB_FOLDER, `${newId}.sqlite`);
+
+    fs.renameSync(oldFilePath, newFilePath);
+
+    return { oldId, newId, filePath: newFilePath };
+}
+
+// Deletes the entire databse file
 export function deleteDatabase(dbId: string): { success: boolean; message: string } {
     const filePath = path.join(DB_FOLDER, `${dbId}.sqlite`);
 

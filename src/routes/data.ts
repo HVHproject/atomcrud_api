@@ -1,5 +1,5 @@
 import express from 'express';
-import { createDatabase, deleteDatabase, getDatabaseContents, listDatabases } from '../db/manager';
+import { createDatabase, deleteDatabase, getDatabaseContents, listDatabases, renameDatabase } from '../db/manager';
 
 const router = express.Router();
 
@@ -30,6 +30,7 @@ router.get('/:dbId', (req, res) => {
     }
 });
 
+// Get all databases listed
 router.get('/', (req, res) => {
     try {
         const databases = listDatabases();
@@ -39,6 +40,24 @@ router.get('/', (req, res) => {
     }
 });
 
+// Updates database name
+router.put('/:dbId', (req, res) => {
+    const { dbId } = req.params;
+    const { newName } = req.body;
+    if (!newName || typeof newName !== 'string') {
+        return res.status(400).json({ error: 'Missing or invalid newName' });
+    }
+
+    try {
+        const result = renameDatabase(dbId, newName);
+        res.json({ message: 'Database renamed', ...result });
+    } catch (error) {
+        res.status(404).json({ error: String(error) });
+    }
+});
+
+
+// Delete a database
 router.delete('/:dbId', (req, res) => {
     const { dbId } = req.params;
     const result = deleteDatabase(dbId);
