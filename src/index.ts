@@ -1,13 +1,13 @@
 import express from 'express';
 import cors from 'cors';
-import dataRouter from './routes/data'; // Adjust if path differs
+import dataRouter from './routes/database';
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
 // MOUNT HERE
-app.use('/api/data', dataRouter);
+app.use('/api/database', dataRouter);
 
 app.get('/', (req, res) => {
     res.send('API is running');

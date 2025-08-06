@@ -1,5 +1,5 @@
 import express from 'express';
-import { createDatabase, deleteDatabase, getDatabaseContents, listDatabases, renameDatabase } from '../db/manager';
+import { createDatabase, deleteDatabase, getDatabaseContents, listDatabases, renameDatabase } from '../db/database-functions';
 
 const router = express.Router();
 
