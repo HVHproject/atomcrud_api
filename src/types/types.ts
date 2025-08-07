@@ -7,20 +7,13 @@ export type ColumnType =
     | 'advanced_rating' // float 0 to 10
     | 'date'            // unix timestamp
     | 'tags'            // comma- or space-separated
-    | 'rich_text';      // markdown or similar
+    | 'rich_text'       // markdown or similar
+    | 'link';           // display name + url object
 
 export interface ColumnDef {
     name: string;
     type: ColumnType;
-}
-
-export interface EntryRow {
-    id: number;
-    title: string;        // string
-    content: string;      // rich_text
-    date_created: number; // date
-    date_updated: number; // date
-    hidden: boolean;      // boolean
+    hidden?: boolean;
 }
 
 export interface Column {
@@ -43,7 +36,15 @@ export interface DatabaseMetadata {
         [tableName: string]: {
             hidden: boolean;
             columns: {
-                [columnName: string]: ColumnType;
+                [columnName: string]: {
+                    type: ColumnType;
+                    hidden?: boolean;
+                };
+            };
+            rows?: {
+                [rowId: string]: {
+                    hidden: boolean;
+                };
             };
         };
     };

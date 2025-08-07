@@ -50,11 +50,11 @@ export function createDatabase(displayName: string): { id: string; filePath: str
             entries: {
                 hidden: false,
                 columns: {
-                    id: "integer",
-                    title: "string",
-                    content: "rich_text",
-                    date_created: "date",
-                    date_updated: "date"
+                    id: { type: "integer" },
+                    title: { type: "string" },
+                    content: { type: "rich_text" },
+                    date_created: { type: "date" },
+                    date_updated: { type: "date" },
                 }
             }
         },
@@ -94,7 +94,8 @@ export function listDatabases({ includeRows = false }: { includeRows?: boolean }
 
                 const columnDefs = db.prepare(`PRAGMA table_info(${tableName})`).all().map((col: any) => ({
                     name: col.name,
-                    type: metadata.tables?.[tableName]?.columns?.[col.name] ?? 'string',
+                    type: metadata.tables?.[tableName]?.columns?.[col.name]?.type ?? 'string',
+                    hidden: metadata.tables?.[tableName]?.columns?.[col.name]?.hidden ?? false,
                 }));
 
                 const rows = includeRows
@@ -142,7 +143,8 @@ export function getDatabaseTables(dbId: string) {
 
         const columnDefs = db.prepare(`PRAGMA table_info(${tableName})`).all().map((col: any) => ({
             name: col.name,
-            type: metadata.tables?.[tableName]?.columns?.[col.name] ?? 'string',
+            type: metadata.tables?.[tableName]?.columns?.[col.name]?.type ?? 'string',
+            hidden: metadata.tables?.[tableName]?.columns?.[col.name]?.hidden ?? false,
         }));
 
         return {

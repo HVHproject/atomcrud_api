@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import Database from 'better-sqlite3';
-import type { ColumnDef, DatabaseMetadata, Column } from '../types';
+import type { ColumnDef, DatabaseMetadata, Column, ColumnType } from '../types';
 
 const DB_FOLDER = path.resolve('./databases');
 
@@ -42,11 +42,11 @@ export function createTable(dbId: string, rawTableName: string): void {
     metadata.tables[tableName] = {
         hidden: false,
         columns: {
-            id: "integer",
-            title: "string",
-            content: "rich_text",
-            date_created: "date",
-            date_updated: "date",
+            id: { type: "integer" },
+            title: { type: "string" },
+            content: { type: "rich_text" },
+            date_created: { type: "date" },
+            date_updated: { type: "date" },
         },
     };
 
@@ -75,10 +75,19 @@ export function getTable(dbId: string, tableName: string) {
 
     // Read column types
     const columnInfo = db.prepare(`PRAGMA table_info(${tableName})`).all() as Column[];
-    const columns: ColumnDef[] = columnInfo.map((col) => ({
-        name: col.name,
-        type: metadata.tables?.[tableName]?.columns?.[col.name] ?? 'string',
-    }));
+    const columns: ColumnDef[] = columnInfo.map((col) => {
+        const metaCol = metadata.tables?.[tableName]?.columns?.[col.name];
+        return {
+            name: col.name,
+            type: typeof metaCol === 'object'
+                ? metaCol.type
+                : (typeof metaCol === 'string'
+                    ? metaCol as ColumnType
+                    : 'string'),
+            hidden: typeof metaCol === 'object' ? metaCol.hidden ?? false : false,
+        };
+    });
+
 
     // Fetch rows
     const rows = db.prepare(`SELECT * FROM ${tableName}`).all();
