@@ -16,7 +16,6 @@ export function createTable(dbId: string, rawTableName: string): void {
     if (!fs.existsSync(dbPath)) throw new Error(`Database '${dbId}' not found.`);
     if (!fs.existsSync(metaPath)) throw new Error(`Metadata for '${dbId}' not found.`);
 
-    // Sanitize table name (you can improve this)
     const tableName = rawTableName.replace(/\W+/g, '_').toLowerCase();
 
     const db = new Database(dbPath);
@@ -26,18 +25,14 @@ export function createTable(dbId: string, rawTableName: string): void {
             title TEXT,
             content TEXT,
             date_created INTEGER,
-            date_updated INTEGER
+            date_updated INTEGER,
+            hidden BOOLEAN DEFAULT 0
         );
     `);
     db.close();
 
-    // Update metadata
     const metadata: DatabaseMetadata = JSON.parse(fs.readFileSync(metaPath, 'utf-8'));
-
-    // Ensure metadata.tables is initialized
-    if (!metadata.tables) {
-        metadata.tables = {};
-    }
+    if (!metadata.tables) metadata.tables = {};
 
     metadata.tables[tableName] = {
         hidden: false,
@@ -47,6 +42,7 @@ export function createTable(dbId: string, rawTableName: string): void {
             content: { type: "rich_text" },
             date_created: { type: "date" },
             date_updated: { type: "date" },
+            hidden: { type: "boolean", hidden: true },
         },
     };
 

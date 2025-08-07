@@ -41,11 +41,6 @@ export interface DatabaseMetadata {
                     hidden?: boolean;
                 };
             };
-            rows?: {
-                [rowId: string]: {
-                    hidden: boolean;
-                };
-            };
         };
     };
 }

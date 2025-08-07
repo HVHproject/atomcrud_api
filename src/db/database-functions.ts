@@ -32,12 +32,12 @@ export function createDatabase(displayName: string): { id: string; filePath: str
             title TEXT,
             content TEXT,
             date_created INTEGER,
-            date_updated INTEGER
+            date_updated INTEGER,
+            hidden BOOLEAN DEFAULT 0
         );
     `);
     db.close();
 
-    // Write metadata sidecar file
     const metadata: DatabaseMetadata = {
         id,
         displayName,
@@ -55,8 +55,9 @@ export function createDatabase(displayName: string): { id: string; filePath: str
                     content: { type: "rich_text" },
                     date_created: { type: "date" },
                     date_updated: { type: "date" },
-                }
-            }
+                    hidden: { type: "boolean", hidden: true },
+                },
+            },
         },
     };
 
