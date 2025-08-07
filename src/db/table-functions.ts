@@ -95,3 +95,68 @@ export function getTable(dbId: string, tableName: string) {
         rows,
     };
 }
+
+// Renames table
+export function renameTable(dbId: string, oldName: string, newRawName: string): void {
+    const dbPath = path.join(DB_FOLDER, `${dbId}.sqlite`);
+    const metaPath = path.join(DB_FOLDER, `${dbId}.meta.json`);
+
+    if (!fs.existsSync(dbPath)) throw new Error(`Database '${dbId}' not found.`);
+    if (!fs.existsSync(metaPath)) throw new Error(`Metadata for '${dbId}' not found.`);
+
+    const newName = newRawName.replace(/\W+/g, '_').toLowerCase();
+
+    const db = new Database(dbPath);
+    db.exec(`ALTER TABLE ${oldName} RENAME TO ${newName};`);
+    db.close();
+
+    const metadata: DatabaseMetadata = JSON.parse(fs.readFileSync(metaPath, 'utf-8'));
+
+    if (!metadata.tables?.[oldName]) {
+        throw new Error(`Table '${oldName}' does not exist in metadata.`);
+    }
+
+    metadata.tables[newName] = metadata.tables[oldName];
+    delete metadata.tables[oldName];
+    metadata.modifiedAt = new Date().toISOString();
+
+    fs.writeFileSync(metaPath, JSON.stringify(metadata, null, 2));
+}
+
+
+// Hides/Unhides table
+export function setTableVisibility(dbId: string, tableName: string, hidden: boolean): void {
+    const metaPath = path.join(DB_FOLDER, `${dbId}.meta.json`);
+    if (!fs.existsSync(metaPath)) throw new Error(`Metadata for '${dbId}' not found.`);
+
+    const metadata: DatabaseMetadata = JSON.parse(fs.readFileSync(metaPath, 'utf-8'));
+
+    if (!metadata.tables?.[tableName]) {
+        throw new Error(`Table '${tableName}' does not exist in metadata.`);
+    }
+
+    metadata.tables[tableName].hidden = hidden;
+    metadata.modifiedAt = new Date().toISOString();
+    fs.writeFileSync(metaPath, JSON.stringify(metadata, null, 2));
+}
+
+// Deletes specific table
+export function deleteTable(dbId: string, tableName: string): void {
+    const dbPath = path.join(DB_FOLDER, `${dbId}.sqlite`);
+    const metaPath = path.join(DB_FOLDER, `${dbId}.meta.json`);
+
+    if (!fs.existsSync(dbPath)) throw new Error(`Database '${dbId}' not found.`);
+    if (!fs.existsSync(metaPath)) throw new Error(`Metadata for '${dbId}' not found.`);
+
+    const db = new Database(dbPath);
+    db.exec(`DROP TABLE IF EXISTS ${tableName};`);
+    db.close();
+
+    const metadata: DatabaseMetadata = JSON.parse(fs.readFileSync(metaPath, 'utf-8'));
+
+    if (metadata.tables && metadata.tables[tableName]) {
+        delete metadata.tables[tableName];
+        metadata.modifiedAt = new Date().toISOString();
+        fs.writeFileSync(metaPath, JSON.stringify(metadata, null, 2));
+    }
+}

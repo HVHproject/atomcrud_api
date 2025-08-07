@@ -1,5 +1,5 @@
 import express from 'express';
-import { createTable, getTable } from '../db/table-functions';
+import { createTable, deleteTable, getTable, renameTable, setTableVisibility } from '../db/table-functions';
 
 const router = express.Router({ mergeParams: true }); // Important
 
@@ -31,5 +31,54 @@ router.get('/:dbId/table/:tableName', (req, res) => {
         res.status(500).json({ error: 'Failed to fetch table rows', detail: String(err) });
     }
 });
+
+// Renames Table
+router.patch('/:dbId/table/:tableName', (req, res) => {
+    const { dbId, tableName } = req.params;
+    const { newName } = req.body;
+
+    if (!newName || typeof newName !== 'string') {
+        return res.status(400).json({ error: 'Missing or invalid "newName"' });
+    }
+
+    try {
+        renameTable(dbId, tableName, newName);
+        res.json({ success: true, renamedTo: newName });
+    } catch (err) {
+        res.status(500).json({ error: 'Failed to rename table', detail: String(err) });
+    }
+});
+
+
+// Changes table visibility
+router.patch('/:dbId/table/:tableName/visibility', (req, res) => {
+    const { dbId, tableName } = req.params;
+    const { hidden } = req.body;
+
+    if (typeof hidden !== 'boolean') {
+        return res.status(400).json({ error: 'Missing or invalid "hidden" boolean value' });
+    }
+
+    try {
+        setTableVisibility(dbId, tableName, hidden);
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: 'Failed to update table visibility', detail: String(err) });
+    }
+});
+
+
+// Deletes a table from the database
+router.delete('/:dbId/table/:tableName', (req, res) => {
+    const { dbId, tableName } = req.params;
+
+    try {
+        deleteTable(dbId, tableName);
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: 'Failed to delete table', detail: String(err) });
+    }
+});
+
 
 export default router;
