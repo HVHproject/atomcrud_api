@@ -51,7 +51,15 @@ export function createTable(dbId: string, rawTableName: string): void {
 }
 
 // Gets specific table with rows
-export function getTable(dbId: string, tableName: string) {
+export function getTable(
+    dbId: string,
+    tableName: string,
+    options?: {
+        offset?: number;
+        limit?: number;
+        hidden?: boolean;
+    }
+) {
     const dbPath = path.join(DB_FOLDER, `${dbId}.sqlite`);
     const metaPath = path.join(DB_FOLDER, `${dbId}.meta.json`);
 
@@ -84,11 +92,33 @@ export function getTable(dbId: string, tableName: string) {
         };
     });
 
+    // Build query for rows
+    const filters: string[] = [];
+    const params: any[] = [];
 
-    // Fetch rows
-    const rows = db.prepare(`SELECT * FROM ${tableName}`).all();
+    if (typeof options?.hidden === 'boolean') {
+        filters.push(`hidden = ?`);
+        params.push(options.hidden ? 1 : 0);
+    }
 
-    // Table-level hidden flag (default false)
+    let query = `SELECT * FROM ${tableName}`;
+    if (filters.length) {
+        query += ` WHERE ` + filters.join(' AND ');
+    }
+    query += ` ORDER BY id ASC`; // Always deterministic
+
+    if (typeof options?.limit === 'number') {
+        query += ` LIMIT ?`;
+        params.push(options.limit);
+
+        if (typeof options?.offset === 'number') {
+            query += ` OFFSET ?`;
+            params.push(options.offset);
+        }
+    }
+
+    const rows = db.prepare(query).all(...params);
+
     const hidden = metadata.tables?.[tableName]?.hidden ?? false;
 
     db.close();

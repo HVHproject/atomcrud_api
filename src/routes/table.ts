@@ -21,16 +21,33 @@ router.post('/:dbId/table', (req, res) => {
 });
 
 // Get rows of a table in a specific database
+// todo: add the following to the Postman when you have row data
+// Get first 100 non-hidden rows: GET /api/mydb/table/entries?offset=0&limit=100&hidden=false
+// Get second page of 100 visible rows: GET /api/mydb/table/entries?offset=100&limit=100&hidden=false
+// Get all hidden rows: GET /api/mydb/table/entries?hidden=true
 router.get('/:dbId/table/:tableName', (req, res) => {
     const { dbId, tableName } = req.params;
+    const { offset, limit, hidden } = req.query;
+
+    const offsetNum = offset ? parseInt(offset as string, 10) : undefined;
+    const limitNum = limit ? parseInt(limit as string, 10) : undefined;
+
+    let hiddenFlag: boolean | undefined;
+    if (hidden === 'true') hiddenFlag = true;
+    else if (hidden === 'false') hiddenFlag = false;
 
     try {
-        const rows = getTable(dbId, tableName);
-        res.json({ table: tableName, rows });
+        const table = getTable(dbId, tableName, {
+            offset: offsetNum,
+            limit: limitNum,
+            hidden: hiddenFlag,
+        });
+        res.json({ table: tableName, ...table });
     } catch (err) {
         res.status(500).json({ error: 'Failed to fetch table rows', detail: String(err) });
     }
 });
+
 
 // Renames Table
 router.patch('/:dbId/table/:tableName', (req, res) => {
