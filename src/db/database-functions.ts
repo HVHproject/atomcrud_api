@@ -2,6 +2,7 @@ import Database from 'better-sqlite3';
 import fs from 'fs';
 import path from 'path';
 import { DatabaseMetadata } from '../types/types';
+import { columnTypeMap } from '../utils/type-mapping';
 
 const DB_FOLDER = path.resolve('./databases');
 
@@ -27,15 +28,15 @@ export function createDatabase(displayName: string): { id: string; filePath: str
 
     const db = new Database(filePath);
     db.exec(`
-        CREATE TABLE IF NOT EXISTS entries (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            title TEXT,
-            content TEXT,
-            date_created INTEGER,
-            date_updated INTEGER,
-            hidden BOOLEAN DEFAULT 0
-        );
-    `);
+    CREATE TABLE IF NOT EXISTS entries (
+        id ${columnTypeMap["integer"]} PRIMARY KEY AUTOINCREMENT,
+        title ${columnTypeMap["string"]},
+        content ${columnTypeMap["rich_text"]},
+        date_created ${columnTypeMap["date"]},
+        date_updated ${columnTypeMap["date"]},
+        hidden ${columnTypeMap["boolean"]} DEFAULT 0
+    );
+`);
     db.close();
 
     const metadata: DatabaseMetadata = {
