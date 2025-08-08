@@ -1,19 +1,19 @@
 import express from 'express';
-import { createColumn, deleteColumn, getAllColumns, getSingleColumn } from '../db/column-functions';
+import { createColumn, deleteColumn, getAllColumns, getSingleColumn, updateColumnNameOrType, updateColumnVisibility } from '../db/column-functions';
 
 const router = express.Router({ mergeParams: true });
 
 // POST create a new column
 router.post('/:dbId/table/:tableName/column', (req, res) => {
     const { dbId, tableName } = req.params;
-    const { name, type, hidden } = req.body;
+    const { name, type, hidden, order } = req.body;
 
     if (!name || !type) {
         return res.status(400).json({ error: 'Missing name or type in request body' });
     }
 
     try {
-        const newCol = createColumn(dbId, tableName, name, type, hidden ?? false);
+        const newCol = createColumn(dbId, tableName, name, type, hidden ?? false, order);
         res.status(201).json(newCol);
     } catch (err) {
         res.status(500).json({ error: 'Failed to create column', detail: String(err) });
@@ -40,6 +40,40 @@ router.get('/:dbId/table/:tableName/column/:columnName', (req, res) => {
         res.json(column);
     } catch (err) {
         res.status(500).json({ error: 'Failed to get column', detail: String(err) });
+    }
+});
+
+// PATCH rename or type change
+router.patch('/:dbId/table/:tableName/column/:columnName', (req, res) => {
+    const { dbId, tableName, columnName } = req.params;
+    const { newName, newType } = req.body;
+
+    if (!newName && !newType) {
+        return res.status(400).json({ error: 'Must provide newName or newType in body' });
+    }
+
+    try {
+        const updated = updateColumnNameOrType(dbId, tableName, columnName, newName, newType);
+        res.json(updated);
+    } catch (err) {
+        res.status(400).json({ error: (err as Error).message });
+    }
+});
+
+// PATCH change visibility
+router.patch('/:dbId/table/:tableName/column/:columnName/visibility', (req, res) => {
+    const { dbId, tableName, columnName } = req.params;
+    const { hidden } = req.body;
+
+    if (typeof hidden !== 'boolean') {
+        return res.status(400).json({ error: 'hidden must be a boolean' });
+    }
+
+    try {
+        const updated = updateColumnVisibility(dbId, tableName, columnName, hidden);
+        res.json(updated);
+    } catch (err) {
+        res.status(400).json({ error: (err as Error).message });
     }
 });
 

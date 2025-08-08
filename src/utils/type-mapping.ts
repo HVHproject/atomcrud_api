@@ -8,4 +8,5 @@ export const columnTypeMap: Record<string, string> = {
     advanced_rating: 'REAL', // 0.0–10.0
     tags: 'TEXT', // comma-separated
     rich_text: 'TEXT',
+    link: 'TEXT' //json object
 };

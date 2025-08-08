@@ -51,12 +51,12 @@ export function createDatabase(displayName: string): { id: string; filePath: str
             entries: {
                 hidden: false,
                 columns: {
-                    id: { type: "integer" },
-                    title: { type: "string" },
-                    content: { type: "rich_text" },
-                    date_created: { type: "date" },
-                    date_updated: { type: "date" },
-                    hidden: { type: "boolean", hidden: true },
+                    id: { type: "integer", order: 0 },
+                    title: { type: "string", order: 1 },
+                    content: { type: "rich_text", order: 2 },
+                    date_created: { type: "date", order: 3 },
+                    date_updated: { type: "date", order: 4 },
+                    hidden: { type: "boolean", hidden: true, order: 5 },
                 },
             },
         },
@@ -98,6 +98,7 @@ export function listDatabases({ includeRows = false }: { includeRows?: boolean }
                     name: col.name,
                     type: metadata.tables?.[tableName]?.columns?.[col.name]?.type ?? 'string',
                     hidden: metadata.tables?.[tableName]?.columns?.[col.name]?.hidden ?? false,
+                    order: metadata.tables?.[tableName]?.columns?.[col.name]?.order ?? -1,
                 }));
 
                 const rows = includeRows
@@ -147,6 +148,7 @@ export function getDatabaseTables(dbId: string) {
             name: col.name,
             type: metadata.tables?.[tableName]?.columns?.[col.name]?.type ?? 'string',
             hidden: metadata.tables?.[tableName]?.columns?.[col.name]?.hidden ?? false,
+            order: metadata.tables?.[tableName]?.columns?.[col.name]?.order ?? -1,
         }));
 
         return {

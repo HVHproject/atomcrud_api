@@ -14,6 +14,7 @@ export interface ColumnDef {
     name: string;
     type: ColumnType;
     hidden?: boolean;
+    order: number;
 }
 
 export interface Column {
@@ -39,6 +40,7 @@ export interface DatabaseMetadata {
                 [columnName: string]: {
                     type: ColumnType;
                     hidden?: boolean;
+                    order: number; // mandatory: unique index of the column in this table
                 };
             };
         };
