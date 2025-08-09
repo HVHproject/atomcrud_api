@@ -38,12 +38,12 @@ export function createTable(dbId: string, rawTableName: string): void {
     metadata.tables[tableName] = {
         hidden: false,
         columns: {
-            id: { type: "integer", order: 0 },
-            title: { type: "string", order: 1 },
-            content: { type: "rich_text", order: 2 },
-            date_created: { type: "date", order: 3 },
-            date_updated: { type: "date", order: 4 },
-            hidden: { type: "boolean", hidden: true, order: 5 },
+            id: { type: "integer", index: 0 },
+            title: { type: "string", index: 1 },
+            content: { type: "rich_text", index: 2 },
+            date_created: { type: "date", index: 3 },
+            date_updated: { type: "date", index: 4 },
+            hidden: { type: "boolean", hidden: true, index: 5 },
         },
     };
 
@@ -90,8 +90,8 @@ export function getTable(
                     ? metaCol as ColumnType
                     : 'string'),
             hidden: typeof metaCol === 'object' ? metaCol.hidden ?? false : false,
-            order: typeof metaCol === 'object' && typeof metaCol.order === 'number'
-                ? metaCol.order
+            index: typeof metaCol === 'object' && typeof metaCol.index === 'number'
+                ? metaCol.index
                 : -1,
         };
     });

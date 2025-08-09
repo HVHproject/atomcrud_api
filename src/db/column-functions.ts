@@ -19,7 +19,7 @@ export function createColumn(
     rawName: string,
     customType: string,
     hidden = false,
-    order?: number
+    index?: number
 ): ColumnDef {
     const columnName = normalizeColumnName(rawName);
 
@@ -44,17 +44,17 @@ export function createColumn(
 
     db.prepare(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${realSqlType}`).run();
 
-    // Determine order
+    // Determine index
     const currentColumnCount = Object.keys(columns).length;
-    const assignedOrder = typeof order === 'number' ? order : currentColumnCount;
+    const assignedIndex = typeof index === 'number' ? index : currentColumnCount;
 
-    columns[columnName] = { type: customType as ColumnType, hidden, order: assignedOrder };
+    columns[columnName] = { type: customType as ColumnType, hidden, index: assignedIndex };
 
     metadata.modifiedAt = new Date().toISOString();
 
     fs.writeFileSync(metaPath, JSON.stringify(metadata, null, 2));
 
-    return { name: columnName, type: customType as ColumnType, hidden, order: assignedOrder };
+    return { name: columnName, type: customType as ColumnType, hidden, index: assignedIndex };
 }
 
 // Gets all columns from a table
@@ -70,7 +70,7 @@ export function getAllColumns(dbId: string, tableName: string): ColumnDef[] {
         name,
         type: colDef.type as ColumnType,
         hidden: colDef.hidden ?? false,
-        order: typeof colDef.order === 'number' ? colDef.order : -1,
+        index: typeof colDef.index === 'number' ? colDef.index : -1,
     }));
 }
 
@@ -88,7 +88,7 @@ export function getSingleColumn(dbId: string, tableName: string, columnName: str
         name: columnName,
         type: colDef.type as ColumnType,
         hidden: colDef.hidden ?? false,
-        order: typeof colDef.order === 'number' ? colDef.order : -1,
+        index: typeof colDef.index === 'number' ? colDef.index : -1,
     };
 }
 
@@ -141,7 +141,7 @@ export function updateColumnNameOrType(
         // Add new column with same name, new type
         db.prepare(`ALTER TABLE ${tableName} ADD COLUMN ${nameForTypeChange} ${realSqlType}`).run();
 
-        columns[nameForTypeChange] = { type: newType as ColumnType, hidden: currentDef.hidden ?? false, order: currentDef.order ?? -1 };
+        columns[nameForTypeChange] = { type: newType as ColumnType, hidden: currentDef.hidden ?? false, index: currentDef.index ?? -1 };
     }
 
     metadata.modifiedAt = new Date().toISOString();
@@ -151,7 +151,7 @@ export function updateColumnNameOrType(
         name: finalName,
         type: columns[finalName].type,
         hidden: columns[finalName].hidden ?? false,
-        order: typeof columns[finalName].order === 'number' ? columns[finalName].order : -1,
+        index: typeof columns[finalName].index === 'number' ? columns[finalName].index : -1,
     };
 }
 
@@ -180,12 +180,12 @@ export function updateColumnVisibility(
         name: columnName,
         type: columns[columnName].type,
         hidden,
-        order: typeof columns[columnName].order === 'number' ? columns[columnName].order : -1,
+        index: typeof columns[columnName].index === 'number' ? columns[columnName].index : -1,
     };
 }
 
-// Swap order of two columns in a table metadata
-export function swapColumnOrder(dbId: string, tableName: string, colName: string, targetOrder: number): void {
+// Swap index of two columns in a table metadata
+export function swapColumnIndex(dbId: string, tableName: string, colName: string, targetIndex: number): void {
     const columnName = normalizeColumnName(colName);
 
     if (untouchable.includes(columnName))
@@ -200,27 +200,27 @@ export function swapColumnOrder(dbId: string, tableName: string, colName: string
     if (!columns?.[columnName])
         throw new Error(`Column '${columnName}' not found in metadata.`);
 
-    const sourceOrder = columns[columnName].order;
-    if (typeof sourceOrder !== 'number' || sourceOrder < 0)
-        throw new Error(`Invalid order for column '${columnName}'`);
+    const sourceIndex = columns[columnName].index;
+    if (typeof sourceIndex !== 'number' || sourceIndex < 0)
+        throw new Error(`Invalid index for column '${columnName}'`);
 
-    // Find column with targetOrder
-    const targetEntry = Object.entries(columns).find(([, colDef]) => colDef.order === targetOrder);
+    // Find column with targetIndex
+    const targetEntry = Object.entries(columns).find(([, colDef]) => colDef.index === targetIndex);
     if (!targetEntry)
-        throw new Error(`No column found with order ${targetOrder}`);
+        throw new Error(`No column found with order ${targetIndex}`);
 
     const [targetColumnName, targetColDef] = targetEntry;
 
-    // Swap orders
-    columns[columnName].order = targetOrder;
-    columns[targetColumnName].order = sourceOrder;
+    // Swap indexes
+    columns[columnName].index = targetIndex;
+    columns[targetColumnName].index = sourceIndex;
 
     metadata.modifiedAt = new Date().toISOString();
     fs.writeFileSync(metaPath, JSON.stringify(metadata, null, 2));
 }
 
-// Move a column to a new order, shifting others
-export function moveColumnOrder(dbId: string, tableName: string, colName: string, newOrder: number): void {
+// Move a column to a new index, shifting others
+export function moveColumnIndex(dbId: string, tableName: string, colName: string, newIndex: number): void {
     const columnName = normalizeColumnName(colName);
 
     if (untouchable.includes(columnName))
@@ -235,31 +235,31 @@ export function moveColumnOrder(dbId: string, tableName: string, colName: string
     if (!columns?.[columnName])
         throw new Error(`Column '${columnName}' not found in metadata.`);
 
-    const oldOrder = columns[columnName].order;
-    if (typeof oldOrder !== 'number' || oldOrder < 0)
-        throw new Error(`Invalid order for column '${columnName}'`);
+    const oldIndex = columns[columnName].index;
+    if (typeof oldIndex !== 'number' || oldIndex < 0)
+        throw new Error(`Invalid index for column '${columnName}'`);
 
-    if (oldOrder === newOrder) return; // no move needed
+    if (oldIndex === newIndex) return; // no move needed
 
-    // Shift other columns' orders accordingly
+    // Shift other columns' indexes accordingly
     for (const [, colDef] of Object.entries(columns)) {
-        if (typeof colDef.order !== 'number' || colDef.order < 0) continue;
+        if (typeof colDef.index !== 'number' || colDef.index < 0) continue;
 
-        if (oldOrder < newOrder) {
-            // moving down — decrement orders between oldOrder+1 and newOrder
-            if (colDef.order > oldOrder && colDef.order <= newOrder) {
-                colDef.order--;
+        if (oldIndex < newIndex) {
+            // moving down — decrement indexes between oldIndex+1 and newIndex
+            if (colDef.index > oldIndex && colDef.index <= newIndex) {
+                colDef.index--;
             }
         } else {
-            // moving up — increment orders between newOrder and oldOrder-1
-            if (colDef.order >= newOrder && colDef.order < oldOrder) {
-                colDef.order++;
+            // moving up — increment indexes between newIndex and oldIndex-1
+            if (colDef.index >= newIndex && colDef.index < oldIndex) {
+                colDef.index++;
             }
         }
     }
 
-    // Set the column's order to newOrder
-    columns[columnName].order = newOrder;
+    // Set the column's index to newIndex
+    columns[columnName].index = newIndex;
 
     metadata.modifiedAt = new Date().toISOString();
     fs.writeFileSync(metaPath, JSON.stringify(metadata, null, 2));
@@ -284,7 +284,7 @@ export function deleteColumn(dbId: string, tableName: string, rawName: string): 
     if (!columns?.[columnName])
         throw new Error(`Column '${columnName}' not found in metadata.`);
 
-    const deletedOrder = typeof columns[columnName].order === 'number' ? columns[columnName].order : -1;
+    const deletedIndex = typeof columns[columnName].index === 'number' ? columns[columnName].index : -1;
 
     const db = new Database(dbPath);
     try {
@@ -296,11 +296,11 @@ export function deleteColumn(dbId: string, tableName: string, rawName: string): 
     // Remove the deleted column metadata
     delete columns[columnName];
 
-    // Shift orders down by 1 for columns with order > deletedOrder
-    if (deletedOrder >= 0) {
+    // Shift index down by 1 for columns with index > deletedIndex
+    if (deletedIndex >= 0) {
         for (const [colName, colDef] of Object.entries(columns)) {
-            if (typeof colDef.order === 'number' && colDef.order > deletedOrder) {
-                colDef.order = colDef.order - 1;
+            if (typeof colDef.index === 'number' && colDef.index > deletedIndex) {
+                colDef.index = colDef.index - 1;
             }
         }
     }
