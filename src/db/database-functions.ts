@@ -45,7 +45,6 @@ export function createDatabase(displayName: string): { id: string; filePath: str
         createdAt: new Date(timestamp).toISOString(),
         modifiedAt: new Date(timestamp).toISOString(),
         description: "",
-        tags: [],
         hidden: false,
         tables: {
             entries: {

@@ -1,5 +1,5 @@
 import express from 'express';
-import { createColumn, deleteColumn, getAllColumns, getSingleColumn, moveColumnIndex, swapColumnIndex, updateColumnNameOrType, updateColumnVisibility } from '../db/column-functions';
+import { createColumn, deleteColumn, getAllColumns, getSingleColumn, moveColumnIndex, registerTag, swapColumnIndex, unregisterTag, updateColumnNameOrType, updateColumnVisibility } from '../db/column-functions';
 
 const router = express.Router({ mergeParams: true });
 
@@ -105,6 +105,34 @@ router.patch('/:dbId/table/:tableName/column/:columnName/move', (req, res) => {
 
     try {
         moveColumnIndex(dbId, tableName, columnName, newIndex);
+        res.json({ success: true });
+    } catch (err) {
+        res.status(400).json({ error: (err as Error).message });
+    }
+});
+
+// POST register a tag for a column
+router.post('/:dbId/table/:tableName/column/:columnName/tag', (req, res) => {
+    const { dbId, tableName, columnName } = req.params;
+    const { tag } = req.body;
+    if (!tag) return res.status(400).json({ error: 'Tag is required' });
+
+    try {
+        registerTag(dbId, tableName, columnName, tag);
+        res.json({ success: true });
+    } catch (err) {
+        res.status(400).json({ error: (err as Error).message });
+    }
+});
+
+// DELETE unregister a tag from a column
+router.delete('/:dbId/table/:tableName/column/:columnName/tag', (req, res) => {
+    const { dbId, tableName, columnName } = req.params;
+    const { tag } = req.body;
+    if (!tag) return res.status(400).json({ error: 'Tag is required' });
+
+    try {
+        unregisterTag(dbId, tableName, columnName, tag);
         res.json({ success: true });
     } catch (err) {
         res.status(400).json({ error: (err as Error).message });

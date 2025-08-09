@@ -14,7 +14,8 @@ export interface ColumnDef {
     name: string;
     type: ColumnType;
     hidden?: boolean;
-    index: number; // Probably should rename this to index
+    index: number;
+    tags?: string[];
 }
 
 export interface Column {
@@ -31,7 +32,6 @@ export interface DatabaseMetadata {
     createdAt: string;
     modifiedAt: string;
     description?: string;
-    tags?: string[];
     hidden?: boolean;
     tables?: {
         [tableName: string]: {
@@ -40,7 +40,8 @@ export interface DatabaseMetadata {
                 [columnName: string]: {
                     type: ColumnType;
                     hidden?: boolean;
-                    index: number; // mandatory: unique index of the column in this table
+                    index: number;
+                    tags?: string[];
                 };
             };
         };

@@ -6,7 +6,7 @@ import { columnTypeMap } from '../utils/type-mapping';
 
 const DB_FOLDER = path.resolve('./databases');
 
-function normalizeColumnName(name: string): string {
+function normalizeName(name: string): string {
     return name.trim().toLowerCase().replace(/\s+/g, '_');
 }
 
@@ -21,7 +21,7 @@ export function createColumn(
     hidden = false,
     index?: number
 ): ColumnDef {
-    const columnName = normalizeColumnName(rawName);
+    const columnName = normalizeName(rawName);
 
     const metaPath = path.join(DB_FOLDER, `${dbId}.meta.json`);
     const dbPath = path.join(DB_FOLDER, `${dbId}.sqlite`);
@@ -48,7 +48,7 @@ export function createColumn(
     const currentColumnCount = Object.keys(columns).length;
     const assignedIndex = typeof index === 'number' ? index : currentColumnCount;
 
-    columns[columnName] = { type: customType as ColumnType, hidden, index: assignedIndex };
+    columns[columnName] = { type: customType as ColumnType, hidden, index: assignedIndex, ...(customType === 'tags' ? { tags: [] as string[] } : {}) };
 
     metadata.modifiedAt = new Date().toISOString();
 
@@ -66,12 +66,21 @@ export function getAllColumns(dbId: string, tableName: string): ColumnDef[] {
     const tableMeta = metadata.tables?.[tableName];
     if (!tableMeta || !tableMeta.columns) throw new Error(`Table '${tableName}' or its columns not found in metadata.`);
 
-    return Object.entries(tableMeta.columns).map(([name, colDef]): ColumnDef => ({
-        name,
-        type: colDef.type as ColumnType,
-        hidden: colDef.hidden ?? false,
-        index: typeof colDef.index === 'number' ? colDef.index : -1,
-    }));
+    return Object.entries(tableMeta.columns).map(([name, colDef]): ColumnDef => {
+        const baseDef: ColumnDef = {
+            name,
+            type: colDef.type as ColumnType,
+            hidden: colDef.hidden ?? false,
+            index: typeof colDef.index === 'number' ? colDef.index : -1,
+        };
+
+        // Include tags array if it's a tag column
+        if (colDef.type === 'tags') {
+            baseDef.tags = Array.isArray(colDef.tags) ? colDef.tags : [];
+        }
+
+        return baseDef;
+    });
 }
 
 // Gets a column from a table
@@ -84,12 +93,19 @@ export function getSingleColumn(dbId: string, tableName: string, columnName: str
     const colDef = tableMeta?.columns?.[columnName];
     if (!colDef) throw new Error(`Column '${columnName}' not found in table '${tableName}'`);
 
-    return {
+    const result: ColumnDef = {
         name: columnName,
         type: colDef.type as ColumnType,
         hidden: colDef.hidden ?? false,
         index: typeof colDef.index === 'number' ? colDef.index : -1,
     };
+
+    // Include tags array if it's a tag column
+    if (colDef.type === 'tags') {
+        result.tags = Array.isArray(colDef.tags) ? colDef.tags : [];
+    }
+
+    return result;
 }
 
 // Updates name, or deletes old column and creates a new column with a name and type
@@ -100,7 +116,7 @@ export function updateColumnNameOrType(
     newName?: string,
     newType?: string
 ): ColumnDef {
-    const oldName = normalizeColumnName(rawOldName);
+    const oldName = normalizeName(rawOldName);
 
     if (untouchable.includes(oldName))
         throw new Error(`Column '${oldName}' is protected and cannot be modified.`);
@@ -118,7 +134,7 @@ export function updateColumnNameOrType(
         throw new Error(`Column '${oldName}' not found in metadata.`);
 
     const currentDef = columns[oldName];
-    const finalName = newName ? normalizeColumnName(newName) : oldName;
+    const finalName = newName ? normalizeName(newName) : oldName;
 
     // 1) Rename if needed
     if (newName && finalName !== oldName) {
@@ -141,7 +157,7 @@ export function updateColumnNameOrType(
         // Add new column with same name, new type
         db.prepare(`ALTER TABLE ${tableName} ADD COLUMN ${nameForTypeChange} ${realSqlType}`).run();
 
-        columns[nameForTypeChange] = { type: newType as ColumnType, hidden: currentDef.hidden ?? false, index: currentDef.index ?? -1 };
+        columns[nameForTypeChange] = { type: newType as ColumnType, hidden: currentDef.hidden ?? false, index: currentDef.index ?? -1, ...(newType === 'tags' ? { tags: [] as string[] } : {}) };
     }
 
     metadata.modifiedAt = new Date().toISOString();
@@ -162,7 +178,7 @@ export function updateColumnVisibility(
     rawName: string,
     hidden: boolean
 ): ColumnDef {
-    const columnName = normalizeColumnName(rawName);
+    const columnName = normalizeName(rawName);
 
     const metaPath = path.join(DB_FOLDER, `${dbId}.meta.json`);
     if (!fs.existsSync(metaPath)) throw new Error(`Metadata for '${dbId}' not found.`);
@@ -186,7 +202,7 @@ export function updateColumnVisibility(
 
 // Swap index of two columns in a table metadata
 export function swapColumnIndex(dbId: string, tableName: string, colName: string, targetIndex: number): void {
-    const columnName = normalizeColumnName(colName);
+    const columnName = normalizeName(colName);
 
     if (untouchable.includes(columnName))
         throw new Error(`Column '${columnName}' is protected and cannot be reordered.`);
@@ -221,7 +237,7 @@ export function swapColumnIndex(dbId: string, tableName: string, colName: string
 
 // Move a column to a new index, shifting others
 export function moveColumnIndex(dbId: string, tableName: string, colName: string, newIndex: number): void {
-    const columnName = normalizeColumnName(colName);
+    const columnName = normalizeName(colName);
 
     if (untouchable.includes(columnName))
         throw new Error(`Column '${columnName}' is protected and cannot be reordered.`);
@@ -265,10 +281,47 @@ export function moveColumnIndex(dbId: string, tableName: string, colName: string
     fs.writeFileSync(metaPath, JSON.stringify(metadata, null, 2));
 }
 
+// Adds a tag to a list of possible tags
+export function registerTag(dbId: string, tableName: string, columnName: string, tag: string): void {
+    const metaPath = path.join(DB_FOLDER, `${dbId}.meta.json`);
+    if (!fs.existsSync(metaPath)) throw new Error(`Metadata for database '${dbId}' not found`);
+
+    const metadata: DatabaseMetadata = JSON.parse(fs.readFileSync(metaPath, 'utf-8'));
+    const column = metadata.tables?.[tableName]?.columns?.[columnName];
+    if (!column) throw new Error(`Column '${columnName}' not found`);
+    if (column.type !== 'tags') throw new Error(`Column '${columnName}' is not of type 'tags'`);
+
+    const normalizedTag = normalizeName(tag);
+
+    column.tags ??= [];
+    if (column.tags.includes(normalizedTag)) {
+        throw new Error(`Tag '${normalizedTag}' already exists in column '${columnName}'`);
+    }
+
+    column.tags.push(normalizedTag);
+    metadata.modifiedAt = new Date().toISOString();
+    fs.writeFileSync(metaPath, JSON.stringify(metadata, null, 2));
+}
+
+// removes a tag from a list of possible tags
+export function unregisterTag(dbId: string, tableName: string, columnName: string, tag: string): void {
+    const metaPath = path.join(DB_FOLDER, `${dbId}.meta.json`);
+    if (!fs.existsSync(metaPath)) throw new Error(`Metadata for database '${dbId}' not found`);
+
+    const metadata: DatabaseMetadata = JSON.parse(fs.readFileSync(metaPath, 'utf-8'));
+    const column = metadata.tables?.[tableName]?.columns?.[columnName];
+    if (!column) throw new Error(`Column '${columnName}' not found`);
+    if (column.type !== 'tags') throw new Error(`Column '${columnName}' is not of type 'tags'`);
+
+    column.tags = (column.tags ?? []).filter(t => t !== tag);
+
+    metadata.modifiedAt = new Date().toISOString();
+    fs.writeFileSync(metaPath, JSON.stringify(metadata, null, 2));
+}
 
 // Deletes unprotected column
 export function deleteColumn(dbId: string, tableName: string, rawName: string): void {
-    const columnName = normalizeColumnName(rawName);
+    const columnName = normalizeName(rawName);
 
     if (untouchable.includes(columnName))
         throw new Error(`Column '${columnName}' is protected and cannot be deleted.`);
