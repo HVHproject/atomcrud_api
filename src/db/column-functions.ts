@@ -184,6 +184,88 @@ export function updateColumnVisibility(
     };
 }
 
+// Swap order of two columns in a table metadata
+export function swapColumnOrder(dbId: string, tableName: string, colName: string, targetOrder: number): void {
+    const columnName = normalizeColumnName(colName);
+
+    if (untouchable.includes(columnName))
+        throw new Error(`Column '${columnName}' is protected and cannot be reordered.`);
+
+    const metaPath = path.join(DB_FOLDER, `${dbId}.meta.json`);
+    if (!fs.existsSync(metaPath))
+        throw new Error(`Metadata file not found for '${dbId}'`);
+
+    const metadata: DatabaseMetadata = JSON.parse(fs.readFileSync(metaPath, 'utf-8'));
+    const columns = metadata.tables?.[tableName]?.columns;
+    if (!columns?.[columnName])
+        throw new Error(`Column '${columnName}' not found in metadata.`);
+
+    const sourceOrder = columns[columnName].order;
+    if (typeof sourceOrder !== 'number' || sourceOrder < 0)
+        throw new Error(`Invalid order for column '${columnName}'`);
+
+    // Find column with targetOrder
+    const targetEntry = Object.entries(columns).find(([, colDef]) => colDef.order === targetOrder);
+    if (!targetEntry)
+        throw new Error(`No column found with order ${targetOrder}`);
+
+    const [targetColumnName, targetColDef] = targetEntry;
+
+    // Swap orders
+    columns[columnName].order = targetOrder;
+    columns[targetColumnName].order = sourceOrder;
+
+    metadata.modifiedAt = new Date().toISOString();
+    fs.writeFileSync(metaPath, JSON.stringify(metadata, null, 2));
+}
+
+// Move a column to a new order, shifting others
+export function moveColumnOrder(dbId: string, tableName: string, colName: string, newOrder: number): void {
+    const columnName = normalizeColumnName(colName);
+
+    if (untouchable.includes(columnName))
+        throw new Error(`Column '${columnName}' is protected and cannot be reordered.`);
+
+    const metaPath = path.join(DB_FOLDER, `${dbId}.meta.json`);
+    if (!fs.existsSync(metaPath))
+        throw new Error(`Metadata file not found for '${dbId}'`);
+
+    const metadata: DatabaseMetadata = JSON.parse(fs.readFileSync(metaPath, 'utf-8'));
+    const columns = metadata.tables?.[tableName]?.columns;
+    if (!columns?.[columnName])
+        throw new Error(`Column '${columnName}' not found in metadata.`);
+
+    const oldOrder = columns[columnName].order;
+    if (typeof oldOrder !== 'number' || oldOrder < 0)
+        throw new Error(`Invalid order for column '${columnName}'`);
+
+    if (oldOrder === newOrder) return; // no move needed
+
+    // Shift other columns' orders accordingly
+    for (const [, colDef] of Object.entries(columns)) {
+        if (typeof colDef.order !== 'number' || colDef.order < 0) continue;
+
+        if (oldOrder < newOrder) {
+            // moving down — decrement orders between oldOrder+1 and newOrder
+            if (colDef.order > oldOrder && colDef.order <= newOrder) {
+                colDef.order--;
+            }
+        } else {
+            // moving up — increment orders between newOrder and oldOrder-1
+            if (colDef.order >= newOrder && colDef.order < oldOrder) {
+                colDef.order++;
+            }
+        }
+    }
+
+    // Set the column's order to newOrder
+    columns[columnName].order = newOrder;
+
+    metadata.modifiedAt = new Date().toISOString();
+    fs.writeFileSync(metaPath, JSON.stringify(metadata, null, 2));
+}
+
+
 // Deletes unprotected column
 export function deleteColumn(dbId: string, tableName: string, rawName: string): void {
     const columnName = normalizeColumnName(rawName);

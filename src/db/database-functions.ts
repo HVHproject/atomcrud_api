@@ -172,7 +172,6 @@ export function getDatabaseTables(dbId: string) {
 export function renameDatabase(oldId: string, newDisplayName: string): {
     oldId: string;
     newId: string;
-    filePath: string;
 } {
     const oldDataPath = path.join(DB_FOLDER, `${oldId}.sqlite`);
     const oldMetaPath = path.join(DB_FOLDER, `${oldId}.meta.json`);
@@ -208,7 +207,7 @@ export function renameDatabase(oldId: string, newDisplayName: string): {
         fs.unlinkSync(oldMetaPath);
     }
 
-    return { oldId, newId, filePath: newDataPath };
+    return { oldId, newId };
 }
 
 // Deletes the database file and its metadata

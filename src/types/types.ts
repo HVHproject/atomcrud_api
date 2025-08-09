@@ -14,7 +14,7 @@ export interface ColumnDef {
     name: string;
     type: ColumnType;
     hidden?: boolean;
-    order: number;
+    order: number; // Probably should rename this to index
 }
 
 export interface Column {
