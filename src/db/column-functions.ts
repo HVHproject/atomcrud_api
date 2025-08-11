@@ -3,12 +3,9 @@ import path from 'path';
 import Database from 'better-sqlite3';
 import type { ColumnDef, DatabaseMetadata, ColumnType } from '../types';
 import { columnTypeMap } from '../utils/type-mapping';
+import { normalizeName } from '../utils/normalize-name';
 
 const DB_FOLDER = path.resolve('./databases');
-
-function normalizeName(name: string): string {
-    return name.trim().toLowerCase().replace(/\s+/g, '_');
-}
 
 const untouchable = ['id', 'title', 'content', 'date_created', 'date_modified', 'hidden'];
 

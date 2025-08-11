@@ -33,7 +33,7 @@ export function createDatabase(displayName: string): { id: string; filePath: str
         title ${columnTypeMap["string"]},
         content ${columnTypeMap["rich_text"]},
         date_created ${columnTypeMap["date"]},
-        date_updated ${columnTypeMap["date"]},
+        date_modified ${columnTypeMap["date"]},
         hidden ${columnTypeMap["boolean"]} DEFAULT 0
     );
 `);
@@ -54,7 +54,7 @@ export function createDatabase(displayName: string): { id: string; filePath: str
                     title: { type: "string", index: 1 },
                     content: { type: "rich_text", index: 2 },
                     date_created: { type: "date", index: 3 },
-                    date_updated: { type: "date", index: 4 },
+                    date_modified: { type: "date", index: 4 },
                     hidden: { type: "boolean", hidden: true, index: 5 },
                 },
             },

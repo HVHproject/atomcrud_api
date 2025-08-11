@@ -1,7 +1,7 @@
 import express from 'express';
 import { createTable, deleteTable, getTable, renameTable, setTableVisibility } from '../db/table-functions';
 
-const router = express.Router({ mergeParams: true }); // Important
+const router = express.Router({ mergeParams: true });
 
 // Create a new table in an existing database
 router.post('/:dbId/table', (req, res) => {

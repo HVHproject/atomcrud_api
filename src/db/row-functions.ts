@@ -1,0 +1,213 @@
+import fs from 'fs';
+import path from 'path';
+import Database from 'better-sqlite3';
+import type { DatabaseMetadata } from '../types';
+import { normalizeName } from '../utils/normalize-name';
+
+const DB_FOLDER = path.resolve('./databases');
+if (!fs.existsSync(DB_FOLDER)) {
+    fs.mkdirSync(DB_FOLDER);
+}
+
+function validateColumnValue(colMeta: { type: string; tags?: string[] }, value: any): void {
+    const { type, tags } = colMeta;
+
+    switch (type) {
+        case 'string':
+        case 'rich_text':
+            // no validation, accept anything (string assumed)
+            break;
+
+        case 'boolean':
+            if (value !== 0 && value !== 1) {
+                throw new Error(`Value for boolean column must be 0 or 1, got: ${value}`);
+            }
+            break;
+
+        case 'integer':
+            if (!Number.isInteger(value)) {
+                throw new Error(`Value for integer column must be an integer, got: ${value}`);
+            }
+            break;
+
+        case 'float':
+            if (typeof value !== 'number') {
+                throw new Error(`Value for float column must be a number, got: ${value}`);
+            }
+            break;
+
+        case 'date':
+            if (typeof value !== 'number' || value <= 0) {
+                throw new Error(`Value for date column must be a positive number (timestamp), got: ${value}`);
+            }
+            break;
+
+        case 'rating':
+            if (!Number.isInteger(value) || value < 0 || value > 5) {
+                throw new Error(`Value for rating column must be an integer 0-5, got: ${value}`);
+            }
+            break;
+
+        case 'advanced_rating':
+            if (typeof value !== 'number' || value < 0 || value > 10) {
+                throw new Error(`Value for advanced_rating column must be a number 0.0-10.0, got: ${value}`);
+            }
+            break;
+
+        case 'tags':
+            if (typeof value !== 'string') {
+                throw new Error(`Value for tags column must be a string, got: ${value}`);
+            }
+            if (tags && !tags.includes(value)) {
+                throw new Error(`Invalid tag for tags column: ${value}`);
+            }
+            break;
+
+        case 'link':
+            // Expecting a JSON object string with { displayName: string, url: string }
+            if (typeof value !== 'string') {
+                throw new Error(`Value for link column must be a JSON string, got: ${value}`);
+            }
+            try {
+                const parsed = JSON.parse(value);
+                if (
+                    typeof parsed !== 'object' ||
+                    typeof parsed.displayName !== 'string' ||
+                    typeof parsed.url !== 'string'
+                ) {
+                    throw new Error();
+                }
+            } catch {
+                throw new Error(`Invalid JSON format for link column. Expected {displayName: string, url: string}`);
+            }
+            break;
+
+        default:
+            throw new Error(`Unknown column type: ${type}`);
+    }
+}
+
+
+// POST create a new row
+export function createRow(dbId: string, tableName: string, data: Record<string, any>) {
+    const dbPath = path.join(DB_FOLDER, `${dbId}.sqlite`);
+    if (!fs.existsSync(dbPath)) throw new Error(`Database '${dbId}' not found`);
+
+    const metaPath = path.join(DB_FOLDER, `${dbId}.meta.json`);
+    if (!fs.existsSync(metaPath)) throw new Error(`Metadata for database '${dbId}' not found`);
+
+    const metadata: DatabaseMetadata = JSON.parse(fs.readFileSync(metaPath, 'utf-8'));
+    const tableMeta = metadata.tables?.[tableName];
+    if (!tableMeta) throw new Error(`Table '${tableName}' not found`);
+
+    // Normalize incoming column keys
+    const normalizedData: Record<string, any> = {};
+    for (const key of Object.keys(data)) {
+        if (key === 'date_modified') continue;
+        normalizedData[normalizeName(key)] = data[key];
+    }
+
+    // Ensure title is provided and not just whitespace
+    if (!normalizedData.title || String(normalizedData.title).trim() === '') {
+        throw new Error(`Title is required and cannot be blank`);
+    }
+
+    // Default values
+    const now = Date.now();
+    const rowData: Record<string, any> = {
+        id: undefined,
+        title: normalizedData.title,
+        content: normalizedData.content,
+        date_created: normalizedData.date_created ?? now,
+        date_modified: now,
+        hidden: 0,
+    };
+
+    // Add optional user-defined columns (only those defined in metadata)
+    for (const colName of Object.keys(tableMeta.columns)) {
+        if (colName in rowData) continue;
+        if (colName in normalizedData) rowData[colName] = normalizedData[colName];
+    }
+
+    // Validates column types
+    for (const [colName, colMeta] of Object.entries(tableMeta.columns)) {
+        if (colName in normalizedData) {
+            validateColumnValue(colMeta, normalizedData[colName]);
+        }
+    }
+
+    const db = new Database(dbPath);
+    const colNames = Object.keys(rowData).filter(k => rowData[k] !== undefined);
+    const placeholders = colNames.map(() => '?').join(', ');
+    const stmt = db.prepare(
+        `INSERT INTO "${tableName}" (${colNames.join(', ')}) VALUES (${placeholders})`
+    );
+    const info = stmt.run(colNames.map(k => rowData[k]));
+    db.close();
+
+    return getSingleRow(dbId, tableName, String(info.lastInsertRowid));
+}
+
+// GET a single row
+export function getSingleRow(dbId: string, tableName: string, rowId: string) {
+    const dbPath = path.join(DB_FOLDER, `${dbId}.sqlite`);
+    if (!fs.existsSync(dbPath)) throw new Error(`Database '${dbId}' not found`);
+
+    const db = new Database(dbPath);
+    const stmt = db.prepare(`SELECT * FROM "${tableName}" WHERE id = ?`);
+    const row = stmt.get(rowId);
+    db.close();
+
+    if (!row) throw new Error(`Row with ID '${rowId}' not found`);
+    return row;
+}
+
+export function patchRowVisibility(dbId: string, tableName: string, rowId: string, hiddenValue: number) {
+    if (hiddenValue !== 0 && hiddenValue !== 1) {
+        throw new Error('Invalid hidden value. Must be 0 or 1.');
+    }
+
+    const dbPath = path.join(DB_FOLDER, `${dbId}.sqlite`);
+    if (!fs.existsSync(dbPath)) throw new Error(`Database '${dbId}' not found`);
+
+    // Check table metadata to ensure 'hidden' column exists and is boolean/integer
+    const metaPath = path.join(DB_FOLDER, `${dbId}.meta.json`);
+    if (!fs.existsSync(metaPath)) throw new Error(`Metadata for database '${dbId}' not found`);
+    const metadata: DatabaseMetadata = JSON.parse(fs.readFileSync(metaPath, 'utf-8'));
+    const tableMeta = metadata.tables?.[tableName];
+    if (!tableMeta) throw new Error(`Table '${tableName}' not found`);
+    if (!tableMeta.columns?.hidden || tableMeta.columns.hidden.type !== 'boolean') {
+        throw new Error(`Table '${tableName}' does not have a boolean 'hidden' column`);
+    }
+
+    const db = new Database(dbPath);
+    const now = Date.now();
+
+    // Update hidden and date_modified
+    const stmt = db.prepare(`
+        UPDATE "${tableName}" 
+        SET hidden = ?, date_modified = ?
+        WHERE id = ?
+    `);
+    const result = stmt.run(hiddenValue, now, rowId);
+    db.close();
+
+    if (result.changes === 0) {
+        throw new Error(`Row with ID '${rowId}' not found`);
+    }
+
+    return getSingleRow(dbId, tableName, rowId);
+}
+
+// DELETE a row
+export function deleteRow(dbId: string, tableName: string, rowId: string) {
+    const dbPath = path.join(DB_FOLDER, `${dbId}.sqlite`);
+    if (!fs.existsSync(dbPath)) throw new Error(`Database '${dbId}' not found`);
+
+    const db = new Database(dbPath);
+    const stmt = db.prepare(`DELETE FROM "${tableName}" WHERE id = ?`);
+    const result = stmt.run(rowId);
+    db.close();
+
+    if (result.changes === 0) throw new Error(`Row with ID '${rowId}' not found`);
+}
