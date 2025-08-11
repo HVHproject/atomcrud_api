@@ -162,6 +162,7 @@ export function getSingleRow(dbId: string, tableName: string, rowId: string) {
     return row;
 }
 
+// PATCH visibility of a row
 export function patchRowVisibility(dbId: string, tableName: string, rowId: string, hiddenValue: number) {
     if (hiddenValue !== 0 && hiddenValue !== 1) {
         throw new Error('Invalid hidden value. Must be 0 or 1.');
@@ -198,6 +199,75 @@ export function patchRowVisibility(dbId: string, tableName: string, rowId: strin
 
     return getSingleRow(dbId, tableName, rowId);
 }
+
+// PATCH Row data
+export function patchRow(dbId: string, tableName: string, rowId: string, data: Record<string, any>) {
+    const dbPath = path.join(DB_FOLDER, `${dbId}.sqlite`);
+    if (!fs.existsSync(dbPath)) throw new Error(`Database '${dbId}' not found`);
+
+    const metaPath = path.join(DB_FOLDER, `${dbId}.meta.json`);
+    if (!fs.existsSync(metaPath)) throw new Error(`Metadata for database '${dbId}' not found`);
+
+    const metadata: DatabaseMetadata = JSON.parse(fs.readFileSync(metaPath, 'utf-8'));
+    const tableMeta = metadata.tables?.[tableName];
+    if (!tableMeta) throw new Error(`Table '${tableName}' not found`);
+
+    // Normalize keys and exclude disallowed fields
+    const normalizedData: Record<string, any> = {};
+    for (const key of Object.keys(data)) {
+        if (['id', 'date_modified', 'hidden'].includes(key)) continue;
+        normalizedData[normalizeName(key)] = data[key];
+    }
+
+    // Validate columns in normalizedData
+    for (const [colName, value] of Object.entries(normalizedData)) {
+        const colMeta = tableMeta.columns[colName];
+        if (!colMeta) {
+            throw new Error(`Column '${colName}' does not exist in table '${tableName}'`);
+        }
+        validateColumnValue(colMeta, value);
+    }
+
+    // If title is being updated, ensure not blank
+    if ('title' in normalizedData && String(normalizedData.title).trim() === '') {
+        throw new Error('Title cannot be blank');
+    }
+
+    // Build SET clause dynamically
+    const setClauses: string[] = [];
+    const values: any[] = [];
+
+    for (const [colName, value] of Object.entries(normalizedData)) {
+        setClauses.push(`"${colName}" = ?`);
+        values.push(value);
+    }
+
+    // Always update date_modified
+    setClauses.push(`date_modified = ?`);
+    values.push(Date.now());
+
+    if (setClauses.length === 0) {
+        throw new Error('No valid fields provided for update');
+    }
+
+    values.push(rowId);
+
+    const db = new Database(dbPath);
+    const stmt = db.prepare(`
+    UPDATE "${tableName}"
+    SET ${setClauses.join(', ')}
+    WHERE id = ?
+  `);
+    const result = stmt.run(...values);
+    db.close();
+
+    if (result.changes === 0) {
+        throw new Error(`Row with ID '${rowId}' not found`);
+    }
+
+    return getSingleRow(dbId, tableName, rowId);
+}
+
 
 // DELETE a row
 export function deleteRow(dbId: string, tableName: string, rowId: string) {

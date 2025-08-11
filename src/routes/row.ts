@@ -1,5 +1,5 @@
 import express from 'express';
-import { getSingleRow, createRow, deleteRow, patchRowVisibility } from '../db/row-functions';
+import { getSingleRow, createRow, deleteRow, patchRowVisibility, patchRow } from '../db/row-functions';
 
 const router = express.Router({ mergeParams: true });
 
@@ -32,7 +32,7 @@ router.get('/:dbId/table/:tableName/row/:rowId', (req, res) => {
     }
 });
 
-// PATCH row visibility (toggle hidden flag)
+// PATCH row visibility
 router.patch('/:dbId/table/:tableName/row/:rowId/visibility', (req, res) => {
     const { dbId, tableName, rowId } = req.params;
     const { hidden } = req.body;
@@ -48,6 +48,24 @@ router.patch('/:dbId/table/:tableName/row/:rowId/visibility', (req, res) => {
         res.json(updatedRow);
     } catch (err) {
         res.status(500).json({ error: 'Failed to update row visibility', detail: String(err) });
+    }
+});
+
+// PATCH Row data
+router.patch('/:dbId/table/:tableName/row/:rowId', (req, res) => {
+    const { dbId, tableName, rowId } = req.params;
+    const data = req.body;
+
+    // Disallow edits on id, date_modified, hidden
+    if ('id' in data || 'date_modified' in data || 'hidden' in data) {
+        return res.status(400).json({ error: "Cannot edit 'id', 'date_modified', or 'hidden' fields via this endpoint" });
+    }
+
+    try {
+        const updatedRow = patchRow(dbId, tableName, rowId, data);
+        res.json(updatedRow);
+    } catch (err) {
+        res.status(500).json({ error: 'Failed to update row', detail: String(err) });
     }
 });
 
