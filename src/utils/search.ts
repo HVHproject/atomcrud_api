@@ -33,9 +33,7 @@ function coerceBoolean(value: string): number | null {
 }
 
 function isRegexNode(node: any): boolean {
-    // Library uses "regexpr" (as seen in your logs). Also support "regex" just in case.
     if (node?.regexpr === true || node?.regex === true) return true;
-    // Support /pattern/ literal syntax (if it ever comes through as term with slashes)
     if (typeof node?.term === 'string' && node.term.length >= 2 && node.term.startsWith('/') && node.term.endsWith('/')) {
         return true;
     }
@@ -44,7 +42,7 @@ function isRegexNode(node: any): boolean {
 
 function extractRegexPattern(node: any): string {
     if (node?.regexpr === true || node?.regex === true) {
-        return String(node.term); // raw pattern (no slashes)
+        return String(node.term);
     }
     const t = String(node.term || '');
     if (t.startsWith('/') && t.endsWith('/')) return t.slice(1, -1);
@@ -73,21 +71,15 @@ function buildWhereFromNode(node: any, params: any[], columns: ColumnDef[]): str
         return buildWhereFromNode(node.left, params, columns);
     }
 
-    // Unary NOT operator form: { operator: 'NOT', right: ... } (sometimes left is used)
-    if (typeof node.operator === 'string' && node.operator.toUpperCase() === 'NOT') {
-        const child = node.right ?? node.left;
-        if (!child) return '1';
-        const childSQL = buildWhereFromNode(child, params, columns);
-        return `(NOT ${childSQL})`;
+    // Handle NOT via prefix (!term) or !field
+    let negate = false;
+    if (node.prefix === '!') {
+        negate = true;
+        node = { ...node, prefix: null };
     }
-
-    // Node-level negation flag or '-' prefix (e.g., -hidden:1)
-    if (node.not === true || node.prefix === '-') {
-        const copy = { ...node };
-        delete copy.not;
-        if (copy.prefix === '-') copy.prefix = null;
-        const inner = buildWhereFromNode(copy, params, columns);
-        return `(NOT ${inner})`;
+    if (typeof node.field === 'string' && node.field.startsWith('!')) {
+        negate = true;
+        node = { ...node, field: node.field.slice(1) };
     }
 
     // Binary operators: AND / OR
@@ -109,7 +101,9 @@ function buildWhereFromNode(node: any, params: any[], columns: ColumnDef[]): str
         if (isRegexNode(node)) {
             const pattern = extractRegexPattern(node);
             params.push(pattern);
-            return `${colName} REGEXP ?`;
+            return negate
+                ? `(NOT ${colName} REGEXP ?)`
+                : `${colName} REGEXP ?`;
         }
 
         // Numeric (including boolean treated as 0/1)
@@ -118,17 +112,24 @@ function buildWhereFromNode(node: any, params: any[], columns: ColumnDef[]): str
                 const boolVal = coerceBoolean(String(node.term));
                 if (boolVal !== null) {
                     params.push(boolVal);
-                    return `${colName} = ?`;
+                    return negate
+                        ? `(NOT ${colName} = ?)`
+                        : `${colName} = ?`;
                 }
-                // fall through to numeric comparisons if term uses >/< (rare for boolean)
             }
             const numericSQL = buildComparisonForNumeric(colName, String(node.term), params);
-            if (numericSQL) return numericSQL;
+            if (numericSQL) {
+                return negate
+                    ? `(NOT ${numericSQL})`
+                    : numericSQL;
+            }
         }
 
         // Default LIKE
         params.push(`%${String(node.term)}%`);
-        return `${colName} LIKE ? COLLATE NOCASE`;
+        return negate
+            ? `(NOT ${colName} LIKE ? COLLATE NOCASE)`
+            : `${colName} LIKE ? COLLATE NOCASE`;
     }
 
     // Bare term (implicit title search)
@@ -138,12 +139,15 @@ function buildWhereFromNode(node: any, params: any[], columns: ColumnDef[]): str
         if (isRegexNode(node)) {
             const pattern = extractRegexPattern(node);
             params.push(pattern);
-            return `${colName} REGEXP ?`;
+            return negate
+                ? `(NOT ${colName} REGEXP ?)`
+                : `${colName} REGEXP ?`;
         }
 
-        // Default LIKE on title
         params.push(`%${String(node.term)}%`);
-        return `${colName} LIKE ? COLLATE NOCASE`;
+        return negate
+            ? `(NOT ${colName} LIKE ? COLLATE NOCASE)`
+            : `${colName} LIKE ? COLLATE NOCASE`;
     }
 
     // Grouped terms (default AND)
@@ -170,9 +174,8 @@ export function parseSearchQuery(
     try {
         parsed = lucene.parse(queryString);
 
-        console.log('RAW PARSED:', JSON.stringify(parsed, null, 2));
+        console.log('RAW PARSED: ', JSON.stringify(parsed, null, 2));
 
-        // Normalize simple cases
         if (typeof parsed === 'string') {
             parsed = { term: parsed };
         }
