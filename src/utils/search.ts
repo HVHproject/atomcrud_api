@@ -1,6 +1,11 @@
 import lucene from 'lucene-query-parser';
 import { ColumnDef } from '../types/types';
 
+// Column types that should be treated as numeric
+const numericTypes = new Set<ColumnDef['type']>([
+    'integer', 'float', 'rating', 'advanced_rating', 'date'
+]);
+
 // Resolves a column identifier like "i3" or "title" to an actual column name.
 function resolveFieldName(field: string, columns: ColumnDef[]): string | null {
     if (!field) return null;
@@ -26,7 +31,13 @@ function buildWhereFromNode(
         return buildWhereFromNode(node.left, params, columns);
     }
 
-    // Handle compound expressions (AND, OR, NOT)
+    // Handle negation flag
+    if (node.not === true) {
+        const innerSQL = buildWhereFromNode({ ...node, not: false }, params, columns);
+        return `(NOT ${innerSQL})`;
+    }
+
+    // Handle compound expressions (AND, OR)
     if (node.left && node.right && node.operator) {
         const leftSQL = buildWhereFromNode(node.left, params, columns);
         const rightSQL = buildWhereFromNode(node.right, params, columns);
@@ -34,46 +45,73 @@ function buildWhereFromNode(
         return `(${leftSQL} ${op} ${rightSQL})`;
     }
 
-    // Handle NOT
-    if (node.operator && node.operator.toUpperCase() === 'NOT' && node.right) {
-        const rightSQL = buildWhereFromNode(node.right, params, columns);
-        return `(NOT ${rightSQL})`;
-    }
-
     // Handle single term with explicit field
     if (node.field && node.term) {
         let colName = resolveFieldName(node.field, columns) || 'title';
         if (node.field === '<implicit>') colName = 'title'; // default for bare terms
-        if (node.term.startsWith('/') && node.term.endsWith('/')) {
-            const pattern = node.term.slice(1, -1);
+
+        const colType = columns.find(c => c.name === colName)?.type || 'string';
+
+        // Regex case
+        if (node.regex || (node.term.startsWith('/') && node.term.endsWith('/'))) {
+            const pattern = node.regex ? node.term : node.term.slice(1, -1);
             params.push(pattern);
             return `${colName} REGEXP ?`;
-        } else {
-            params.push(`%${node.term}%`);
-            return `${colName} LIKE ? COLLATE NOCASE`;
         }
+
+        // Numeric comparison
+        if (numericTypes.has(colType)) {
+            const match = node.term.match(/^(>=|<=|>|<)(.+)$/);
+            if (match) {
+                params.push(parseFloat(match[2]));
+                return `${colName} ${match[1]} ?`;
+            } else if (!isNaN(Number(node.term))) {
+                params.push(Number(node.term));
+                return `${colName} = ?`;
+            }
+        }
+
+        // Default: LIKE search
+        params.push(`%${node.term}%`);
+        return `${colName} LIKE ? COLLATE NOCASE`;
     }
 
-    // Handle bare term
+    // Handle bare term (no field)
     if (node.term) {
         const colName = 'title';
-        if (node.term.startsWith('/') && node.term.endsWith('/')) {
-            const pattern = node.term.slice(1, -1);
+        const colType = columns.find(c => c.name === colName)?.type || 'string';
+
+        // Regex case
+        if (node.regex || (node.term.startsWith('/') && node.term.endsWith('/'))) {
+            const pattern = node.regex ? node.term : node.term.slice(1, -1);
             params.push(pattern);
             return `${colName} REGEXP ?`;
-        } else {
-            params.push(`%${node.term}%`);
-            return `${colName} LIKE ? COLLATE NOCASE`;
         }
+
+        // Numeric comparison for implicit column
+        if (numericTypes.has(colType)) {
+            const match = node.term.match(/^(>=|<=|>|<)(.+)$/);
+            if (match) {
+                params.push(parseFloat(match[2]));
+                return `${colName} ${match[1]} ?`;
+            } else if (!isNaN(Number(node.term))) {
+                params.push(Number(node.term));
+                return `${colName} = ?`;
+            }
+        }
+
+        // Default LIKE search
+        params.push(`%${node.term}%`);
+        return `${colName} LIKE ? COLLATE NOCASE`;
     }
 
-    // Handle grouped terms
+    // Handle grouped terms (default AND)
     if (Array.isArray(node)) {
         const subClauses = node
             .map(n => buildWhereFromNode(n, params, columns))
             .filter(clause => clause && clause !== '1');
         if (subClauses.length === 0) return '1';
-        return `(${subClauses.join(' AND ')})`; // default AND
+        return `(${subClauses.join(' AND ')})`;
     }
 
     return '1';
