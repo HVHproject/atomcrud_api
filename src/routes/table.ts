@@ -27,7 +27,7 @@ router.post('/:dbId/table', (req, res) => {
 // Get all hidden rows: GET /api/mydb/table/entries?hidden=true
 router.get('/:dbId/table/:tableName', (req, res) => {
     const { dbId, tableName } = req.params;
-    const { offset, limit, hidden } = req.query;
+    const { offset, limit, hidden, search } = req.query;
 
     const offsetNum = offset ? parseInt(offset as string, 10) : undefined;
     const limitNum = limit ? parseInt(limit as string, 10) : undefined;
@@ -41,6 +41,7 @@ router.get('/:dbId/table/:tableName', (req, res) => {
             offset: offsetNum,
             limit: limitNum,
             hidden: hiddenFlag,
+            search: search as string | undefined,
         });
         res.json({ table: tableName, ...table });
     } catch (err) {

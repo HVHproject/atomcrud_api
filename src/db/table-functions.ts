@@ -3,6 +3,7 @@ import path from 'path';
 import Database from 'better-sqlite3';
 import type { ColumnDef, DatabaseMetadata, Column, ColumnType } from '../types';
 import { columnTypeMap } from '../utils/type-mapping';
+import { parseSearchQuery } from '../utils/search';
 
 const DB_FOLDER = path.resolve('./databases');
 
@@ -59,6 +60,7 @@ export function getTable(
         offset?: number;
         limit?: number;
         hidden?: boolean;
+        search?: string; // <-- add search here
     }
 ) {
     const dbPath = path.join(DB_FOLDER, `${dbId}.sqlite`);
@@ -69,6 +71,15 @@ export function getTable(
 
     const metadata: DatabaseMetadata = JSON.parse(fs.readFileSync(metaPath, 'utf-8'));
     const db = new Database(dbPath);
+
+    (db as any).function('REGEXP', (pattern: string, value: string) => {
+        if (value === null) return 0;
+        try {
+            return new RegExp(pattern, 'i').test(value) ? 1 : 0;
+        } catch {
+            return 0;
+        }
+    });
 
     // Check if the table exists
     const tableExistsStmt = db.prepare(`
@@ -96,20 +107,29 @@ export function getTable(
         };
     });
 
-    // Build query for rows
-    const filters: string[] = [];
-    const params: any[] = [];
+    let filters: string[] = [];
+    let params: any[] = [];
 
+    // hidden filter
     if (typeof options?.hidden === 'boolean') {
         filters.push(`hidden = ?`);
         params.push(options.hidden ? 1 : 0);
+    }
+
+    // search filter
+    if (options?.search) {
+        const { parseSearchQuery } = require('../utils/search'); // or import at top
+        const searchResult = parseSearchQuery(options.search, columns);
+        filters.push(searchResult.where);
+        params.push(...searchResult.params);
     }
 
     let query = `SELECT * FROM ${tableName}`;
     if (filters.length) {
         query += ` WHERE ` + filters.join(' AND ');
     }
-    query += ` ORDER BY id ASC`; // Always deterministic
+
+    query += ` ORDER BY id ASC`;
 
     if (typeof options?.limit === 'number') {
         query += ` LIMIT ?`;
