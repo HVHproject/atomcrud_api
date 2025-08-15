@@ -11,7 +11,7 @@ const numericTypes = new Set<ColumnDef['type']>([
     'boolean', // treat boolean as 0/1 numeric equality
 ]);
 
-function resolveFieldName(field: string, columns: ColumnDef[]): string | null {
+export function resolveFieldName(field: string, columns: ColumnDef[]): string | null {
     if (!field) return null;
     if (/^i\d+$/.test(field)) {
         const index = parseInt(field.slice(1), 10);
@@ -162,13 +162,15 @@ function buildWhereFromNode(node: any, params: any[], columns: ColumnDef[]): str
     return '1';
 }
 
-export function parseSearchQuery(
-    queryString: string,
-    columns: ColumnDef[]
-): { where: string; params: any[] } {
+export function parseSearchQuery(queryString: string, columns: ColumnDef[]) {
     if (!queryString || !queryString.trim()) {
         return { where: '1', params: [] };
     }
+
+    // Replace & and | with AND and OR before parsing
+    queryString = queryString
+        .replace(/\s*&\s*/g, ' AND ')
+        .replace(/\s*\|\s*/g, ' OR ');
 
     let parsed: any;
     try {

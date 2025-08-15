@@ -3,7 +3,7 @@ import path from 'path';
 import Database from 'better-sqlite3';
 import type { ColumnDef, DatabaseMetadata, Column, ColumnType } from '../types';
 import { columnTypeMap } from '../utils/type-mapping';
-import { parseSearchQuery } from '../utils/search';
+import { parseSearchQuery, resolveFieldName } from '../utils/search';
 
 const DB_FOLDER = path.resolve('./databases');
 
@@ -60,7 +60,8 @@ export function getTable(
         offset?: number;
         limit?: number;
         hidden?: boolean;
-        search?: string; // <-- add search here
+        search?: string;
+        sort?: string;
     }
 ) {
     const dbPath = path.join(DB_FOLDER, `${dbId}.sqlite`);
@@ -110,15 +111,13 @@ export function getTable(
     let filters: string[] = [];
     let params: any[] = [];
 
-    // hidden filter
     if (typeof options?.hidden === 'boolean') {
         filters.push(`hidden = ?`);
         params.push(options.hidden ? 1 : 0);
     }
 
-    // search filter
     if (options?.search) {
-        const { parseSearchQuery } = require('../utils/search'); // or import at top
+        const { parseSearchQuery } = require('../utils/search');
         const searchResult = parseSearchQuery(options.search, columns);
         filters.push(searchResult.where);
         params.push(...searchResult.params);
@@ -129,8 +128,23 @@ export function getTable(
         query += ` WHERE ` + filters.join(' AND ');
     }
 
-    query += ` ORDER BY id ASC`;
+    // --- Sorting ---
+    let sortCol = 'date_modified';
+    let sortDir = 'DESC';
 
+    if (options?.sort) {
+        const [col, dir] = options.sort.split(':');
+        if (col) {
+            const resolved = resolveFieldName(col, columns);
+            if (resolved) sortCol = resolved;
+        }
+        if (dir && ['asc', 'desc'].includes(dir.toLowerCase())) {
+            sortDir = dir.toUpperCase();
+        }
+    }
+    query += ` ORDER BY ${sortCol} ${sortDir}`;
+
+    // --- Pagination ---
     if (typeof options?.limit === 'number') {
         query += ` LIMIT ?`;
         params.push(options.limit);
