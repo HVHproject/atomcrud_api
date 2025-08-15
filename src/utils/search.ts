@@ -169,8 +169,8 @@ export function parseSearchQuery(queryString: string, columns: ColumnDef[]) {
 
     // Replace & and | with AND and OR before parsing
     queryString = queryString
-        .replace(/\s*&\s*/g, ' AND ')
-        .replace(/\s*\|\s*/g, ' OR ');
+        .replace(/\band\b/gi, 'AND')
+        .replace(/\bor\b/gi, 'OR');
 
     let parsed: any;
     try {
