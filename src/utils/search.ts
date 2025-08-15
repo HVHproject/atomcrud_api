@@ -13,7 +13,7 @@ const numericTypes = new Set<ColumnDef['type']>([
 
 function resolveFieldName(field: string, columns: ColumnDef[]): string | null {
     if (!field) return null;
-    if (field.startsWith('i')) {
+    if (/^i\d+$/.test(field)) {
         const index = parseInt(field.slice(1), 10);
         const col = columns.find((c) => c.index === index);
         return col?.name || null;
