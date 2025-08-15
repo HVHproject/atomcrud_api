@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import Database from 'better-sqlite3';
-import type { ColumnDef, DatabaseMetadata, ColumnType } from '../types';
+import type { ColumnDef, DatabaseMetadata, ColumnType, TagDef } from '../types';
 import { columnTypeMap } from '../utils/type-mapping';
 import { normalizeName } from '../utils/normalize-name';
 
@@ -45,7 +45,7 @@ export function createColumn(
     const currentColumnCount = Object.keys(columns).length;
     const assignedIndex = typeof index === 'number' ? index : currentColumnCount;
 
-    columns[columnName] = { type: customType as ColumnType, hidden, index: assignedIndex, ...(customType === 'tags' ? { tags: [] as string[] } : {}) };
+    columns[columnName] = { type: customType as ColumnType, hidden, index: assignedIndex, ...(customType === 'tags' ? { tags: [] as TagDef[] } : {}) };
 
     metadata.modifiedAt = new Date().toISOString();
 
@@ -154,7 +154,7 @@ export function updateColumnNameOrType(
         // Add new column with same name, new type
         db.prepare(`ALTER TABLE ${tableName} ADD COLUMN ${nameForTypeChange} ${realSqlType}`).run();
 
-        columns[nameForTypeChange] = { type: newType as ColumnType, hidden: currentDef.hidden ?? false, index: currentDef.index ?? -1, ...(newType === 'tags' ? { tags: [] as string[] } : {}) };
+        columns[nameForTypeChange] = { type: newType as ColumnType, hidden: currentDef.hidden ?? false, index: currentDef.index ?? -1, ...(newType === 'tags' ? { tags: [] as TagDef[] } : {}) };
     }
 
     metadata.modifiedAt = new Date().toISOString();
@@ -279,7 +279,13 @@ export function moveColumnIndex(dbId: string, tableName: string, colName: string
 }
 
 // Adds a tag to a list of possible tags
-export function registerTag(dbId: string, tableName: string, columnName: string, tag: string): void {
+export function registerTag(
+    dbId: string,
+    tableName: string,
+    columnName: string,
+    tagName: string,
+    description: string = ''
+): void {
     const metaPath = path.join(DB_FOLDER, `${dbId}.meta.json`);
     if (!fs.existsSync(metaPath)) throw new Error(`Metadata for database '${dbId}' not found`);
 
@@ -288,20 +294,29 @@ export function registerTag(dbId: string, tableName: string, columnName: string,
     if (!column) throw new Error(`Column '${columnName}' not found`);
     if (column.type !== 'tags') throw new Error(`Column '${columnName}' is not of type 'tags'`);
 
-    const normalizedTag = normalizeName(tag);
+    const normalizedName = normalizeName(tagName);
 
     column.tags ??= [];
-    if (column.tags.includes(normalizedTag)) {
-        throw new Error(`Tag '${normalizedTag}' already exists in column '${columnName}'`);
+    if (column.tags.some(t => t.name === normalizedName)) {
+        throw new Error(`Tag '${normalizedName}' already exists in column '${columnName}'`);
     }
 
-    column.tags.push(normalizedTag);
+    column.tags.push({
+        name: normalizedName,
+        description: description.trim()
+    });
+
     metadata.modifiedAt = new Date().toISOString();
     fs.writeFileSync(metaPath, JSON.stringify(metadata, null, 2));
 }
 
 // removes a tag from a list of possible tags
-export function unregisterTag(dbId: string, tableName: string, columnName: string, tag: string): void {
+export function unregisterTag(
+    dbId: string,
+    tableName: string,
+    columnName: string,
+    tagName: string
+): void {
     const metaPath = path.join(DB_FOLDER, `${dbId}.meta.json`);
     if (!fs.existsSync(metaPath)) throw new Error(`Metadata for database '${dbId}' not found`);
 
@@ -310,11 +325,13 @@ export function unregisterTag(dbId: string, tableName: string, columnName: strin
     if (!column) throw new Error(`Column '${columnName}' not found`);
     if (column.type !== 'tags') throw new Error(`Column '${columnName}' is not of type 'tags'`);
 
-    column.tags = (column.tags ?? []).filter(t => t !== tag);
+    const normalizedName = normalizeName(tagName);
+    column.tags = (column.tags ?? []).filter(t => t.name !== normalizedName);
 
     metadata.modifiedAt = new Date().toISOString();
     fs.writeFileSync(metaPath, JSON.stringify(metadata, null, 2));
 }
+
 
 // Deletes unprotected column
 export function deleteColumn(dbId: string, tableName: string, rawName: string): void {

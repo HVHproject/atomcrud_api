@@ -3,68 +3,61 @@ import path from 'path';
 import Database from 'better-sqlite3';
 import type { DatabaseMetadata } from '../types';
 import { normalizeName } from '../utils/normalize-name';
+import { processTagValue } from '../utils/process-tag-value';
 
 const DB_FOLDER = path.resolve('./databases');
 if (!fs.existsSync(DB_FOLDER)) {
     fs.mkdirSync(DB_FOLDER);
 }
 
-function validateColumnValue(colMeta: { type: string; tags?: string[] }, value: any): void {
-    const { type, tags } = colMeta;
+function validateColumnValue(colMeta: { type: string; tags?: any[] }, value: any): any {
+    const { type } = colMeta;
 
     switch (type) {
         case 'string':
         case 'rich_text':
-            // no validation, accept anything (string assumed)
-            break;
+            return value;
 
         case 'boolean':
             if (value !== 0 && value !== 1) {
                 throw new Error(`Value for boolean column must be 0 or 1, got: ${value}`);
             }
-            break;
+            return value;
 
         case 'integer':
             if (!Number.isInteger(value)) {
                 throw new Error(`Value for integer column must be an integer, got: ${value}`);
             }
-            break;
+            return value;
 
         case 'float':
             if (typeof value !== 'number') {
                 throw new Error(`Value for float column must be a number, got: ${value}`);
             }
-            break;
+            return value;
 
         case 'date':
             if (typeof value !== 'number' || value <= 0) {
                 throw new Error(`Value for date column must be a positive number (timestamp), got: ${value}`);
             }
-            break;
+            return value;
 
         case 'rating':
             if (!Number.isInteger(value) || value < 0 || value > 5) {
                 throw new Error(`Value for rating column must be an integer 0-5, got: ${value}`);
             }
-            break;
+            return value;
 
         case 'advanced_rating':
             if (typeof value !== 'number' || value < 0 || value > 10) {
                 throw new Error(`Value for advanced_rating column must be a number 0.0-10.0, got: ${value}`);
             }
-            break;
+            return value;
 
         case 'tags':
-            if (typeof value !== 'string') {
-                throw new Error(`Value for tags column must be a string, got: ${value}`);
-            }
-            if (tags && !tags.includes(value)) {
-                throw new Error(`Invalid tag for tags column: ${value}`);
-            }
-            break;
+            return processTagValue(colMeta as any, value);
 
         case 'link':
-            // Expecting a JSON object string with { displayName: string, url: string }
             if (typeof value !== 'string') {
                 throw new Error(`Value for link column must be a JSON string, got: ${value}`);
             }
@@ -80,7 +73,7 @@ function validateColumnValue(colMeta: { type: string; tags?: string[] }, value: 
             } catch {
                 throw new Error(`Invalid JSON format for link column. Expected {displayName: string, url: string}`);
             }
-            break;
+            return value;
 
         default:
             throw new Error(`Unknown column type: ${type}`);
@@ -132,7 +125,7 @@ export function createRow(dbId: string, tableName: string, data: Record<string, 
     // Validates column types
     for (const [colName, colMeta] of Object.entries(tableMeta.columns)) {
         if (colName in normalizedData) {
-            validateColumnValue(colMeta, normalizedData[colName]);
+            normalizedData[colName] = validateColumnValue(colMeta, normalizedData[colName]);
         }
     }
 
@@ -225,7 +218,7 @@ export function patchRow(dbId: string, tableName: string, rowId: string, data: R
         if (!colMeta) {
             throw new Error(`Column '${colName}' does not exist in table '${tableName}'`);
         }
-        validateColumnValue(colMeta, value);
+        normalizedData[colName] = validateColumnValue(colMeta, normalizedData[colName]);
     }
 
     // If title is being updated, ensure not blank

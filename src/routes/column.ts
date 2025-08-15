@@ -114,16 +114,17 @@ router.patch('/:dbId/table/:tableName/column/:columnName/move', (req, res) => {
 // POST register a tag for a column
 router.post('/:dbId/table/:tableName/column/:columnName/tag', (req, res) => {
     const { dbId, tableName, columnName } = req.params;
-    const { tag } = req.body;
-    if (!tag) return res.status(400).json({ error: 'Tag is required' });
+    const { name, description } = req.body;
+    if (!name) return res.status(400).json({ error: 'Tag name is required' });
 
     try {
-        registerTag(dbId, tableName, columnName, tag);
+        registerTag(dbId, tableName, columnName, name, description || '');
         res.json({ success: true });
     } catch (err) {
         res.status(400).json({ error: (err as Error).message });
     }
 });
+
 
 // DELETE unregister a tag from a column
 router.delete('/:dbId/table/:tableName/column/:columnName/tag', (req, res) => {

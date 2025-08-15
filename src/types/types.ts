@@ -15,7 +15,7 @@ export interface ColumnDef {
     type: ColumnType;
     hidden?: boolean;
     index: number;
-    tags?: string[];
+    tags?: TagDef[];
 }
 
 export interface Column {
@@ -24,6 +24,11 @@ export interface Column {
     notnull: boolean;
     dflt_value: any;
     pk: number;
+}
+
+export interface TagDef {
+    name: string;
+    description: string;
 }
 
 export interface DatabaseMetadata {
@@ -41,7 +46,7 @@ export interface DatabaseMetadata {
                     type: ColumnType;
                     hidden?: boolean;
                     index: number;
-                    tags?: string[];
+                    tags?: TagDef[];
                 };
             };
         };
