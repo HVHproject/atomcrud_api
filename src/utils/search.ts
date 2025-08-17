@@ -8,7 +8,7 @@ const numericTypes = new Set<ColumnDef['type']>([
     'rating',
     'advanced_rating',
     'date',
-    'boolean', // treat boolean as 0/1 numeric equality
+    'boolean',
 ]);
 
 export function resolveFieldName(field: string, columns: ColumnDef[]): string | null {
@@ -90,7 +90,7 @@ function buildWhereFromNode(node: any, params: any[], columns: ColumnDef[]): str
         return `(${leftSQL} ${op} ${rightSQL})`;
     }
 
-    // Fielded term (e.g., title:alpha, i1:alpha, count:>5)
+    // Fielded term
     if (node.field && node.term != null) {
         let colName = resolveFieldName(node.field, columns) || 'title';
         if (node.field === '<implicit>') colName = 'title';
