@@ -2,29 +2,27 @@ import { ColumnDef } from "../types/types";
 import { normalizeName } from "./normalize-name";
 
 export function processTagValue(colMeta: ColumnDef, rawValue: any): string {
-    if (!Array.isArray(rawValue) && typeof rawValue !== 'string') {
-        throw new Error(`Tags for column '${colMeta.name}' must be an array or space-separated string`);
+    if (typeof rawValue !== "string") {
+        throw new Error(`Tags for column '${colMeta.name}' must be provided as a space-separated string`);
     }
 
-    // Convert to array
-    const inputTags = Array.isArray(rawValue)
-        ? rawValue.map(t => String(t))
-        : String(rawValue).split(/\s+/);
+    // Step 1: split by whitespace
+    const inputTags = rawValue.trim() === "" ? [] : rawValue.split(/\s+/);
 
-    const normalizedTags = inputTags
-        .map(t => normalizeName(t))
-        .filter(Boolean);
+    // Step 2: normalize
+    const normalized = inputTags.map(t => normalizeName(t)).filter(Boolean);
 
-    // Get allowed tags from metadata
-    const allowedTags = (colMeta.tags ?? []).map(t => t.name);
-
-    // Ensure all are allowed
-    for (const tag of normalizedTags) {
-        if (!allowedTags.includes(tag)) {
+    // Step 3: enforce allowed tags
+    const allowed = (colMeta.tags ?? []).map(t => t.name);
+    for (const tag of normalized) {
+        if (!allowed.includes(tag)) {
             throw new Error(`Tag '${tag}' is not registered in column '${colMeta.name}'`);
         }
     }
 
-    // Sort alphabetically and join with spaces
-    return normalizedTags.sort().join(' ');
+    // Step 4: dedupe + sort
+    const uniqueSorted = Array.from(new Set(normalized)).sort();
+
+    // Step 5: rejoin
+    return uniqueSorted.join(" ");
 }

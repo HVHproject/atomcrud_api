@@ -116,18 +116,18 @@ export function createRow(dbId: string, tableName: string, data: Record<string, 
         hidden: 0,
     };
 
-    // Add optional user-defined columns (only those defined in metadata)
-    for (const colName of Object.keys(tableMeta.columns)) {
-        if (colName in rowData) continue;
-        if (colName in normalizedData) rowData[colName] = normalizedData[colName];
-    }
+    // Validate and populate all columns
+for (const [colName, colMeta] of Object.entries(tableMeta.columns)) {
+    if (colName === "id") continue; // let SQLite handle auto-increment id
 
-    // Validates column types
-    for (const [colName, colMeta] of Object.entries(tableMeta.columns)) {
-        if (colName in normalizedData) {
-            normalizedData[colName] = validateColumnValue(colMeta, normalizedData[colName]);
-        }
+    if (colName in normalizedData) {
+        // If provided by client, validate it
+        rowData[colName] = validateColumnValue(colMeta, normalizedData[colName]);
+    } else if (!(colName in rowData)) {
+        // If not in rowData (i.e. not a default standard field), skip unless needed
+        continue;
     }
+}
 
     const db = new Database(dbPath);
     const colNames = Object.keys(rowData).filter(k => rowData[k] !== undefined);
