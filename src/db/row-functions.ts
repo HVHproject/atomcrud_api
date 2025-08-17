@@ -118,13 +118,11 @@ export function createRow(dbId: string, tableName: string, data: Record<string, 
 
     // Validate and populate all columns
 for (const [colName, colMeta] of Object.entries(tableMeta.columns)) {
-    if (colName === "id") continue; // let SQLite handle auto-increment id
+    if (colName === "id") continue;
 
     if (colName in normalizedData) {
-        // If provided by client, validate it
         rowData[colName] = validateColumnValue(colMeta, normalizedData[colName]);
     } else if (!(colName in rowData)) {
-        // If not in rowData (i.e. not a default standard field), skip unless needed
         continue;
     }
 }

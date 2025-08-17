@@ -176,18 +176,13 @@ export function parseSearchQuery(queryString: string, columns: ColumnDef[]) {
     try {
         parsed = lucene.parse(queryString);
 
-        console.log('RAW PARSED: ', JSON.stringify(parsed, null, 2));
-
         if (typeof parsed === 'string') {
             parsed = { term: parsed };
         }
         if (Array.isArray(parsed) && parsed.length === 1 && parsed[0]?.term != null) {
             parsed = parsed[0];
         }
-
-        console.log('NORMALIZED PARSED:', JSON.stringify(parsed, null, 2));
     } catch {
-        console.log('Lucene parse failed, using fallback split.');
         const terms = queryString.split(/\s+/);
         const params: any[] = [];
         const where = terms
@@ -201,9 +196,6 @@ export function parseSearchQuery(queryString: string, columns: ColumnDef[]) {
 
     const params: any[] = [];
     const where = buildWhereFromNode(parsed, params, columns);
-
-    console.log('FINAL WHERE:', where);
-    console.log('FINAL PARAMS:', params);
 
     return { where, params };
 }
