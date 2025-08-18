@@ -258,10 +258,70 @@ DELETE {{baseURL}}/api/database/:dbId/table/:tableName/row/:rowId
 
 ---
 
+## Complex Searching and Pagination
+
+The API supports advanced querying and sorting for table rows. This allows fine-grained control over which rows are returned and in what order.
+
+### `q` — Query (Search)
+- Uses **Lucene-style syntax** with support for:
+  - **Parentheses `()`** for grouping and order of operations.
+  - **`and`**: Both conditions must be true.
+  - **`or`**: Either condition can be true.
+  - **`!`**: Negation operator (exclude matches).
+- **Column targeting**:
+  - Use the **normalized column name**: `title:test`
+  - Or use **column index**: `i1:test`
+  - Example: `title:test` and `i1:test` are identical.
+- **Default column**: `title`.  
+  - Example: `test` is the same as `title:test`.
+- **Default operator**: `and`.  
+  - Example: `test case` → `title:test AND title:case`
+- **Exact phrase search**: Wrap in quotes.
+  - Example: `i1:"test case"` matches only rows with the exact phrase `"test case"`.
+
+#### Examples:
+- `q=alpha and beta` → Matches rows where both "alpha" and "beta" are in the title.
+- `q=(alpha or beta) and !gamma` → Matches rows with "alpha" or "beta", but excludes those containing "gamma".
+- `q=i2:"gamma test"` → Matches rows where column at index `2` contains the exact phrase "gamma test".
+
+---
+
+### `s` — Sorting
+Sorting uses a similar syntax to queries, but specifies a column and an order.
+
+- Syntax: `s=column:asc` or `s=column:desc`
+- Columns can be targeted by name or index.
+  - Example: `s=i2:asc` or `s=title:desc`
+
+#### Examples:
+- `s=title:asc` → Sort rows alphabetically by title.
+- `s=i3:desc` → Sort rows descending by the column at index `3`.
+
+---
+
+### Pagination
+
+- **`limit`**: Maximum number of rows to return.  
+  - Example: `limit=10`
+- **`offset`**: Starting row for pagination.  
+  - Example: `offset=10`
+
+#### Example Combined Request:
+```http
+GET {{baseURL}}/api/database/:dbId/table/:tableName?q=(alpha or beta)&s=i2:asc&limit=10&offset=10
+```
+
+This example:
+- Finds rows where title contains alpha or beta.
+- Sorts results ascending by column index 2.
+- Skips the first 10 rows.
+- Returns the next 10 rows.
+
+---
+
 ## Notes
 
 - Six **system columns** (`id`, `title`, `content`, `date_created`, `date_modified`, `hidden`) cannot be deleted, renamed, moved, or retyped.  
-- All user-defined columns must declare a valid type (see column types above).  
-- Search (`q`), sort (`s`), hidden filtering, and pagination (`offset`, `limit`) are supported for table queries.  
+- All user-defined columns must declare a valid type (see column types above).
 - Tags require registration before being assigned to rows.  
 - Rich text is stored as plain strings and must be formatted and handled on the frontend.
