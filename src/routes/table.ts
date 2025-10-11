@@ -1,5 +1,5 @@
 import express from 'express';
-import { createTable, deleteTable, getTable, renameTable, setTableVisibility } from '../db/table-functions';
+import { copyTable, createTable, deleteTable, getTable, renameTable, setTableVisibility } from '../db/table-functions';
 
 const router = express.Router({ mergeParams: true });
 
@@ -17,6 +17,22 @@ router.post('/:dbId/table', (req, res) => {
         res.status(201).json({ success: true, table: tableName });
     } catch (err) {
         res.status(500).json({ error: 'Failed to create table', detail: String(err) });
+    }
+});
+
+// POST copy a table
+router.post('/:sourceDbId/table/:sourceTableName/copy', (req, res) => {
+    const { sourceDbId, sourceTableName } = req.params;
+    const { targetDbId, newTableName } = req.body;
+
+    try {
+        copyTable(sourceDbId, sourceTableName, targetDbId || sourceDbId, newTableName);
+        res.status(201).json({
+            success: true,
+            message: `Table '${sourceTableName}' copied to '${targetDbId || sourceDbId}' as '${newTableName || sourceTableName + '_copy'}'`,
+        });
+    } catch (err) {
+        res.status(400).json({ error: (err as Error).message });
     }
 });
 

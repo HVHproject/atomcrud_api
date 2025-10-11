@@ -58,6 +58,99 @@ export function createTable(dbId: string, rawTableName: string): void {
     fs.writeFileSync(metaPath, JSON.stringify(metadata, null, 2));
 }
 
+// Copies a table in a database
+export function copyTable(
+    sourceDbId: string,
+    sourceTableName: string,
+    targetDbId: string = sourceDbId,
+    newRawTableName?: string
+): void {
+    const sourceDbPath = path.join(DB_FOLDER, `${sourceDbId}.sqlite`);
+    const targetDbPath = path.join(DB_FOLDER, `${targetDbId}.sqlite`);
+    const sourceMetaPath = path.join(DB_FOLDER, `${sourceDbId}.meta.json`);
+    const targetMetaPath = path.join(DB_FOLDER, `${targetDbId}.meta.json`);
+
+    if (!fs.existsSync(sourceDbPath)) throw new Error(`Source database '${sourceDbId}' not found.`);
+    if (!fs.existsSync(targetDbPath)) throw new Error(`Target database '${targetDbId}' not found.`);
+    if (!fs.existsSync(sourceMetaPath)) throw new Error(`Metadata for '${sourceDbId}' not found.`);
+    if (!fs.existsSync(targetMetaPath)) throw new Error(`Metadata for '${targetDbId}' not found.`);
+
+    const sourceMetadata: DatabaseMetadata = JSON.parse(fs.readFileSync(sourceMetaPath, 'utf-8'));
+    const targetMetadata: DatabaseMetadata = JSON.parse(fs.readFileSync(targetMetaPath, 'utf-8'));
+
+    const normalizedSourceTable = normalizeName(sourceTableName);
+    const newTableName = normalizeName(newRawTableName || `${normalizedSourceTable}_copy_${Date.now()}`);
+
+    if (!sourceMetadata.tables?.[normalizedSourceTable]) {
+        throw new Error(`Source table '${normalizedSourceTable}' not found in metadata.`);
+    }
+
+    if (!targetMetadata.tables) {
+        targetMetadata.tables = {};
+    }
+
+    if (targetMetadata.tables[newTableName]) {
+        throw new Error(`Target table '${newTableName}' already exists in '${targetDbId}'.`);
+    }
+
+    // Determine if same database file
+    const sameDb = sourceDbPath === targetDbPath;
+
+    // Open database handles
+    const db = new Database(sourceDbPath); // single handle if same file
+    const sourceDb = sameDb ? db : new Database(sourceDbPath);
+    const targetDb = sameDb ? db : new Database(targetDbPath);
+
+    try {
+        // Verify source table exists
+        const exists = sourceDb
+            .prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name = ?`)
+            .get(normalizedSourceTable);
+        if (!exists) throw new Error(`Source table '${normalizedSourceTable}' does not exist in '${sourceDbId}'.`);
+
+        // Get column info
+        // Get column info
+        const columns = sourceDb
+            .prepare(`PRAGMA table_info(${normalizedSourceTable})`)
+            .all() as { name: string; type: string }[];
+
+        const columnDefs = columns.map((c: { name: string; type: string }) => `${c.name} ${c.type}`).join(', ');
+        targetDb.exec(`CREATE TABLE ${newTableName} (${columnDefs});`);
+
+        const columnNames = columns.map((c: { name: string }) => c.name).join(', ');
+
+        if (!sameDb) {
+            // Cross-database copy
+            targetDb.exec(`ATTACH DATABASE '${sourceDbPath}' AS sourceDb;`);
+            targetDb.exec(`INSERT INTO ${newTableName} SELECT * FROM sourceDb.${normalizedSourceTable};`);
+            targetDb.exec(`DETACH DATABASE sourceDb;`);
+        } else {
+            // Intra-database copy
+            targetDb
+                .prepare(
+                    `INSERT INTO ${newTableName} (${columnNames}) SELECT ${columnNames} FROM ${normalizedSourceTable}`
+                )
+                .run();
+        }
+
+        // --- Update metadata ---
+        const clonedTableMeta = JSON.parse(JSON.stringify(sourceMetadata.tables[normalizedSourceTable]));
+        clonedTableMeta.hidden = false;
+        targetMetadata.tables[newTableName] = clonedTableMeta;
+        targetMetadata.modifiedAt = new Date().toISOString();
+
+        fs.writeFileSync(targetMetaPath, JSON.stringify(targetMetadata, null, 2));
+    } finally {
+        // Close handles safely
+        if (sameDb) {
+            db.close();
+        } else {
+            sourceDb.close();
+            targetDb.close();
+        }
+    }
+}
+
 // Gets specific table with rows
 export function getTable(
     dbId: string,
