@@ -4,6 +4,7 @@ import Database from 'better-sqlite3';
 import type { ColumnDef, DatabaseMetadata, Column, ColumnType } from '../types';
 import { columnTypeMap } from '../utils/type-mapping';
 import { parseSearchQuery, resolveFieldName } from '../utils/search';
+import { normalizeName } from '../utils/normalize-name';
 
 const DB_FOLDER = path.resolve('./databases');
 
@@ -18,11 +19,19 @@ export function createTable(dbId: string, rawTableName: string): void {
     if (!fs.existsSync(dbPath)) throw new Error(`Database '${dbId}' not found.`);
     if (!fs.existsSync(metaPath)) throw new Error(`Metadata for '${dbId}' not found.`);
 
-    const tableName = rawTableName.replace(/\W+/g, '_').toLowerCase();
+    const tableName = normalizeName(rawTableName);
+
+    const metadata: DatabaseMetadata = JSON.parse(fs.readFileSync(metaPath, 'utf-8'));
+    if (!metadata.tables) metadata.tables = {};
+
+    if (metadata.tables[tableName]) {
+        throw new Error(`Table '${tableName}' already exists in '${dbId}'.`);
+    }
 
     const db = new Database(dbPath);
+
     db.exec(`
-        CREATE TABLE IF NOT EXISTS ${tableName} (
+        CREATE TABLE ${tableName} (
             id ${columnTypeMap["integer"]} PRIMARY KEY AUTOINCREMENT,
             title ${columnTypeMap["string"]},
             content ${columnTypeMap["rich_text"]},
@@ -32,9 +41,6 @@ export function createTable(dbId: string, rawTableName: string): void {
         );
     `);
     db.close();
-
-    const metadata: DatabaseMetadata = JSON.parse(fs.readFileSync(metaPath, 'utf-8'));
-    if (!metadata.tables) metadata.tables = {};
 
     metadata.tables[tableName] = {
         hidden: false,
@@ -177,17 +183,21 @@ export function renameTable(dbId: string, oldName: string, newRawName: string): 
     if (!fs.existsSync(dbPath)) throw new Error(`Database '${dbId}' not found.`);
     if (!fs.existsSync(metaPath)) throw new Error(`Metadata for '${dbId}' not found.`);
 
-    const newName = newRawName.replace(/\W+/g, '_').toLowerCase();
-
-    const db = new Database(dbPath);
-    db.exec(`ALTER TABLE ${oldName} RENAME TO ${newName};`);
-    db.close();
+    const newName = normalizeName(newRawName);
 
     const metadata: DatabaseMetadata = JSON.parse(fs.readFileSync(metaPath, 'utf-8'));
 
     if (!metadata.tables?.[oldName]) {
         throw new Error(`Table '${oldName}' does not exist in metadata.`);
     }
+
+    if (metadata.tables[newName]) {
+        throw new Error(`Table '${newName}' already exists in '${dbId}'.`);
+    }
+
+    const db = new Database(dbPath);
+    db.exec(`ALTER TABLE ${oldName} RENAME TO ${newName};`);
+    db.close();
 
     metadata.tables[newName] = metadata.tables[oldName];
     delete metadata.tables[oldName];
