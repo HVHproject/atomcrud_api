@@ -109,7 +109,6 @@ export function copyTable(
         if (!exists) throw new Error(`Source table '${normalizedSourceTable}' does not exist in '${sourceDbId}'.`);
 
         // Get column info
-        // Get column info
         const columns = sourceDb
             .prepare(`PRAGMA table_info(${normalizedSourceTable})`)
             .all() as { name: string; type: string }[];
@@ -232,16 +231,25 @@ export function getTable(
     let sortDir = 'DESC';
 
     if (options?.sort) {
-        const [col, dir] = options.sort.split(':');
-        if (col) {
-            const resolved = resolveFieldName(col, columns);
-            if (resolved) sortCol = resolved;
+    const [col, dir] = options.sort.split(':');
+
+        if (col && col.toLowerCase() === 'rand') {
+            query += ` ORDER BY RANDOM()`;
+        } else {
+            if (col) {
+                const resolved = resolveFieldName(col, columns);
+                if (resolved) sortCol = resolved;
+            }
+
+            if (dir && ['asc', 'desc'].includes(dir.toLowerCase())) {
+                sortDir = dir.toUpperCase();
+            }
+
+            query += ` ORDER BY ${sortCol} ${sortDir}`;
         }
-        if (dir && ['asc', 'desc'].includes(dir.toLowerCase())) {
-            sortDir = dir.toUpperCase();
-        }
+    } else {
+        query += ` ORDER BY ${sortCol} ${sortDir}`;
     }
-    query += ` ORDER BY ${sortCol} ${sortDir}`;
 
     // --- Pagination ---
     if (typeof options?.limit === 'number') {
