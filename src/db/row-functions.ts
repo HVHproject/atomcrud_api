@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import Database from 'better-sqlite3';
-import type { DatabaseMetadata } from '../types';
+import type { DatabaseMetadata, ColumnDef } from '../types';
 import { normalizeName } from '../utils/normalize-name';
 import { processTagValue } from '../utils/process-tag-value';
 
@@ -10,7 +10,7 @@ if (!fs.existsSync(DB_FOLDER)) {
     fs.mkdirSync(DB_FOLDER);
 }
 
-function validateColumnValue(colMeta: { type: string; tags?: any[] }, value: any): any {
+function validateColumnValue(colMeta: ColumnDef, value: any): any {
     const { type } = colMeta;
 
     switch (type) {
@@ -54,8 +54,26 @@ function validateColumnValue(colMeta: { type: string; tags?: any[] }, value: any
             }
             return value;
 
-        case 'tags':
+        case 'multi_tag':
+        case 'single_tag':
             return processTagValue(colMeta as any, value);
+
+        case 'custom':
+            if (typeof value !== 'string') {
+                throw new Error(`Value for custom column must be a string, got: ${typeof value}`);
+            }
+            if (colMeta.rule) {
+                let regex: RegExp;
+                try {
+                    regex = new RegExp(colMeta.rule);
+                } catch {
+                    throw new Error(`Invalid regex rule for column: ${colMeta.rule}`);
+                }
+                if (!regex.test(value)) {
+                    throw new Error(`Value '${value}' does not match custom rule.`);
+                }
+            }
+            return value;
 
         case 'link':
             if (typeof value !== 'string') {
@@ -121,7 +139,10 @@ for (const [colName, colMeta] of Object.entries(tableMeta.columns)) {
     if (colName === "id") continue;
 
     if (colName in normalizedData) {
-        rowData[colName] = validateColumnValue(colMeta, normalizedData[colName]);
+        rowData[colName] = validateColumnValue(
+            { ...colMeta, name: colName } as ColumnDef,
+            normalizedData[colName]
+        );
     } else if (!(colName in rowData)) {
         continue;
     }
@@ -216,7 +237,10 @@ export function patchRow(dbId: string, tableName: string, rowId: string, data: R
         if (!colMeta) {
             throw new Error(`Column '${colName}' does not exist in table '${tableName}'`);
         }
-        normalizedData[colName] = validateColumnValue(colMeta, normalizedData[colName]);
+        normalizedData[colName] = validateColumnValue(
+            { ...colMeta, name: colName } as ColumnDef,
+            normalizedData[colName]
+        );
     }
 
     // If title is being updated, ensure not blank

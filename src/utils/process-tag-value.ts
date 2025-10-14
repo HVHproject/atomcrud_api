@@ -6,13 +6,9 @@ export function processTagValue(colMeta: ColumnDef, rawValue: any): string {
         throw new Error(`Tags for column '${colMeta.name}' must be provided as a space-separated string`);
     }
 
-    // Step 1: split by whitespace
     const inputTags = rawValue.trim() === "" ? [] : rawValue.split(/\s+/);
-
-    // Step 2: normalize
     const normalized = inputTags.map(t => normalizeName(t)).filter(Boolean);
 
-    // Step 3: enforce allowed tags
     const allowed = (colMeta.tags ?? []).map(t => t.name);
     for (const tag of normalized) {
         if (!allowed.includes(tag)) {
@@ -20,9 +16,14 @@ export function processTagValue(colMeta: ColumnDef, rawValue: any): string {
         }
     }
 
-    // Step 4: dedupe + sort
-    const uniqueSorted = Array.from(new Set(normalized)).sort();
+    if (colMeta.type === "single_tag") {
+        if (normalized.length > 1) {
+            throw new Error(`Column '${colMeta.name}' accepts only one tag`);
+        }
+        return normalized[0] ?? "";
+    }
 
-    // Step 5: rejoin
+    // multi_tag
+    const uniqueSorted = Array.from(new Set(normalized)).sort();
     return uniqueSorted.join(" ");
 }

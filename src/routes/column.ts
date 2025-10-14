@@ -1,5 +1,5 @@
 import express from 'express';
-import { createColumn, deleteColumn, getAllColumns, getSingleColumn, moveColumnIndex, registerTag, swapColumnIndex, unregisterTag, updateColumnNameOrType, updateColumnVisibility } from '../db/column-functions';
+import { createColumn, deleteColumn, getAllColumns, getSingleColumn, moveColumnIndex, registerTag, swapColumnIndex, unregisterTag, updateColumnNameOrType, updateColumnRule, updateColumnVisibility } from '../db/column-functions';
 
 const router = express.Router({ mergeParams: true });
 
@@ -134,6 +134,23 @@ router.delete('/:dbId/table/:tableName/column/:columnName/tag', (req, res) => {
 
     try {
         unregisterTag(dbId, tableName, columnName, tag);
+        res.json({ success: true });
+    } catch (err) {
+        res.status(400).json({ error: (err as Error).message });
+    }
+});
+
+// PATCH update regex rule for custom column
+router.patch('/:dbId/table/:tableName/column/:columnName/rule', (req, res) => {
+    const { dbId, tableName, columnName } = req.params;
+    const { rule } = req.body;
+
+    if (typeof rule !== 'string') {
+        return res.status(400).json({ error: 'Rule must be a string (valid regex pattern).' });
+    }
+
+    try {
+        updateColumnRule(dbId, tableName, columnName, rule);
         res.json({ success: true });
     } catch (err) {
         res.status(400).json({ error: (err as Error).message });

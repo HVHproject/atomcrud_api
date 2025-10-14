@@ -6,16 +6,19 @@ export type ColumnType =
     | 'rating'          // 0 to 5
     | 'advanced_rating' // float 0 to 10
     | 'date'            // unix timestamp
-    | 'tags'            // comma- or space-separated
+    | 'multi_tag'       // multi-select list
+    | 'single_tag'      // single-select list
     | 'rich_text'       // markdown or similar
-    | 'link';           // display name + url object
+    | 'link'            // display name + url object
+    | 'custom';         // validated by regex in metadata
 
 export interface ColumnDef {
     name: string;
     type: ColumnType;
     hidden?: boolean;
     index: number;
-    tags?: TagDef[];
+    tags?: TagDef[]; // for single_tag / multi_tag
+    rule?: string;   // for custom
 }
 
 export interface Column {
@@ -47,6 +50,7 @@ export interface DatabaseMetadata {
                     hidden?: boolean;
                     index: number;
                     tags?: TagDef[];
+                    rule?: string;
                 };
             };
         };

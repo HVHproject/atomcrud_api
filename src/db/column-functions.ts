@@ -45,7 +45,15 @@ export function createColumn(
     const currentColumnCount = Object.keys(columns).length;
     const assignedIndex = typeof index === 'number' ? index : currentColumnCount;
 
-    columns[columnName] = { type: customType as ColumnType, hidden, index: assignedIndex, ...(customType === 'tags' ? { tags: [] as TagDef[] } : {}) };
+    columns[columnName] = {
+        type: customType as ColumnType,
+        hidden,
+        index: assignedIndex,
+        ...(customType === 'multi_tag' || customType === 'single_tag'
+            ? { tags: [] as TagDef[] }
+            : {}),
+        ...(customType === 'custom' ? { rule: '' } : {}),
+    };
 
     metadata.modifiedAt = new Date().toISOString();
 
@@ -72,7 +80,7 @@ export function getAllColumns(dbId: string, tableName: string): ColumnDef[] {
         };
 
         // Include tags array if it's a tag column
-        if (colDef.type === 'tags') {
+        if (colDef.type === 'single_tag' || colDef.type === 'multi_tag') {
             baseDef.tags = Array.isArray(colDef.tags) ? colDef.tags : [];
         }
 
@@ -98,7 +106,7 @@ export function getSingleColumn(dbId: string, tableName: string, columnName: str
     };
 
     // Include tags array if it's a tag column
-    if (colDef.type === 'tags') {
+    if (colDef.type === 'single_tag' || colDef.type === 'multi_tag') {
         result.tags = Array.isArray(colDef.tags) ? colDef.tags : [];
     }
 
@@ -154,7 +162,13 @@ export function updateColumnNameOrType(
         // Add new column with same name, new type
         db.prepare(`ALTER TABLE ${tableName} ADD COLUMN ${nameForTypeChange} ${realSqlType}`).run();
 
-        columns[nameForTypeChange] = { type: newType as ColumnType, hidden: currentDef.hidden ?? false, index: currentDef.index ?? -1, ...(newType === 'tags' ? { tags: [] as TagDef[] } : {}) };
+        columns[nameForTypeChange] = {
+            type: newType as ColumnType,
+            hidden: currentDef.hidden ?? false,
+            index: currentDef.index ?? -1,
+            ...(newType === 'tags' ? { tags: [] as TagDef[] } : {}),
+            ...(newType === 'custom' ? { rule: currentDef.rule ?? '' } : {}),
+        };
     }
 
     metadata.modifiedAt = new Date().toISOString();
@@ -292,7 +306,7 @@ export function registerTag(
     const metadata: DatabaseMetadata = JSON.parse(fs.readFileSync(metaPath, 'utf-8'));
     const column = metadata.tables?.[tableName]?.columns?.[columnName];
     if (!column) throw new Error(`Column '${columnName}' not found`);
-    if (column.type !== 'tags') throw new Error(`Column '${columnName}' is not of type 'tags'`);
+    if (column.type !== 'single_tag' && column.type !== 'multi_tag') throw new Error(`Column '${columnName}' is not of type 'tags'`);
 
     const normalizedName = normalizeName(tagName);
 
@@ -323,11 +337,41 @@ export function unregisterTag(
     const metadata: DatabaseMetadata = JSON.parse(fs.readFileSync(metaPath, 'utf-8'));
     const column = metadata.tables?.[tableName]?.columns?.[columnName];
     if (!column) throw new Error(`Column '${columnName}' not found`);
-    if (column.type !== 'tags') throw new Error(`Column '${columnName}' is not of type 'tags'`);
+    if (column.type === 'single_tag' || column.type === 'multi_tag') throw new Error(`Column '${columnName}' is not of type 'tags'`);
 
     const normalizedName = normalizeName(tagName);
     column.tags = (column.tags ?? []).filter(t => t.name !== normalizedName);
 
+    metadata.modifiedAt = new Date().toISOString();
+    fs.writeFileSync(metaPath, JSON.stringify(metadata, null, 2));
+}
+
+export function updateColumnRule(
+    dbId: string,
+    tableName: string,
+    columnName: string,
+    rule: string
+): void {
+    const metaPath = path.join(DB_FOLDER, `${dbId}.meta.json`);
+    if (!fs.existsSync(metaPath)) throw new Error(`Metadata file not found for '${dbId}'`);
+
+    const metadata: DatabaseMetadata = JSON.parse(fs.readFileSync(metaPath, 'utf-8'));
+    const tableMeta = metadata.tables?.[tableName];
+    if (!tableMeta) throw new Error(`Table '${tableName}' not found in metadata.`);
+
+    const column = tableMeta.columns?.[columnName];
+    if (!column) throw new Error(`Column '${columnName}' not found in metadata.`);
+    if (column.type !== 'custom') throw new Error(`Only custom columns can have regex rules.`);
+
+    // Validate regex
+    try {
+        new RegExp(rule);
+    } catch {
+        throw new Error(`Invalid regex expression: '${rule}'`);
+    }
+
+    // Update rule and save metadata
+    column.rule = rule;
     metadata.modifiedAt = new Date().toISOString();
     fs.writeFileSync(metaPath, JSON.stringify(metadata, null, 2));
 }

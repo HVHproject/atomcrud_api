@@ -6,7 +6,9 @@ export const columnTypeMap: Record<string, string> = {
     date: 'INTEGER', // Unix timestamp
     rating: 'INTEGER', // 0–5
     advanced_rating: 'REAL', // 0.0–10.0
-    tags: 'TEXT', // comma-separated
+    multi_tag: 'TEXT', // comma-separated
+    single_tag: 'TEXT', // comma-separated
     rich_text: 'TEXT',
-    link: 'TEXT' //json object
+    link: 'TEXT', //json object
+    custom: 'TEXT'
 };
