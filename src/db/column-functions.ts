@@ -84,6 +84,11 @@ export function getAllColumns(dbId: string, tableName: string): ColumnDef[] {
             baseDef.tags = Array.isArray(colDef.tags) ? colDef.tags : [];
         }
 
+        // Include rule if it exists
+        if (colDef.rule !== undefined) {
+            baseDef.rule = colDef.rule;
+        }
+
         return baseDef;
     });
 }
@@ -108,6 +113,11 @@ export function getSingleColumn(dbId: string, tableName: string, columnName: str
     // Include tags array if it's a tag column
     if (colDef.type === 'single_tag' || colDef.type === 'multi_tag') {
         result.tags = Array.isArray(colDef.tags) ? colDef.tags : [];
+    }
+
+    // Include rule if it exists
+    if (colDef.rule !== undefined) {
+        result.rule = colDef.rule;
     }
 
     return result;
