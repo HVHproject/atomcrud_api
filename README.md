@@ -22,13 +22,25 @@ I made this API for several reasons:
 
 ---
 
+## Running the Project
+
+To run the API locally in the terminal, use:
+
+```bash
+npm run dev
+```
+
+This launches the development server and watches for TypeScript changes.
+
+---
+
 ## API Overview
 
 The API provides **CRUD operations** at 4 distinct layers:
 
 - **Databases**: Create, list, rename, or delete SQLite files.
-- **Tables**: Create, search, paginate, sort, edit, and delete tables within a database.
-- **Columns**: Define and manage the structure of a table, using metadata for types, tags, and constraints.
+- **Tables**: Create, copy, search, paginate, sort (including random order), edit, and delete tables within a database.
+- **Columns**: Define and manage the structure of a table, using metadata for types, tags, and rules.
 - **Rows**: Insert, edit, patch, or delete actual data inside tables.
 
 Additionally, there is a rigid structure to the databases created by this API. Six columns which cannot be deleted, renamed, or moved are:  
@@ -56,9 +68,11 @@ boolean
 rating          // integer 0–5
 advanced_rating // float 0–10
 date            // unix timestamp (ms)
-tags            // space- or comma-separated strings
+single_select   // choose one value from a predefined list
+multi_select    // choose multiple values from a predefined list
 rich_text       // markdown or similar
 link            // JSON string with {displayName: string, url: string}
+custom          // accepts rule metadata for regex-based validation
 ```
 
 Validation occurs at the API layer to enforce these rules.
@@ -112,10 +126,28 @@ POST {{baseURL}}/api/database/:dbId/table
 }
 ```
 
+#### Copy a Table Between Databases
+```http
+POST {{baseURL}}/api/database/:sourceDbId/table/:tableName/copy
+{
+  "targetDbId": "target_database",
+  "newTableName": "optional_new_name"
+}
+```
+
+Copies a table and its metadata to another database or within the same one.  
+Table names are protected. Duplicates within the same database are not allowed.
+
 #### Get Rows from a Table (supports pagination, search, sorting, hidden filter)
 ```http
 GET {{baseURL}}/api/database/:dbId/table/:tableName?offset=0&limit=10&q=test and hidden:false&s=count:asc
 ```
+
+#### Random Sort Example
+```http
+GET {{baseURL}}/api/database/:dbId/table/:tableName?s=rand
+```
+When `s=rand`, results are returned in a randomized order.
 
 #### Rename a Table
 ```http
@@ -147,7 +179,7 @@ DELETE {{baseURL}}/api/database/:dbId/table/:tableName
 POST {{baseURL}}/api/database/:dbId/table/:tableName/column
 {
   "name": "skill",
-  "type": "tags",
+  "type": "multi_select",
   "hidden": false
 }
 ```
@@ -161,6 +193,15 @@ GET {{baseURL}}/api/database/:dbId/table/:tableName/columns
 ```http
 GET {{baseURL}}/api/database/:dbId/table/:tableName/column/:columnName
 ```
+
+#### Set a Column Rule (for custom types)
+```http
+PATCH {{baseURL}}/api/database/:dbId/table/:tableName/column/:columnName/rule
+{
+  "rule": "^[A-Za-z0-9_]+$"
+}
+```
+Allows regex-based restrictions for data validation on custom type columns.
 
 #### Rename or Change Column Type
 ```http
@@ -290,12 +331,14 @@ The API supports advanced querying and sorting for table rows. This allows fine-
 Sorting uses a similar syntax to queries, but specifies a column and an order.
 
 - Syntax: `s=column:asc` or `s=column:desc`
+- To randomize order, use `s=rand`
 - Columns can be targeted by name or index.
   - Example: `s=i2:asc` or `s=title:desc`
 
 #### Examples:
 - `s=title:asc` → Sort rows alphabetically by title.
 - `s=i3:desc` → Sort rows descending by the column at index `3`.
+- `s=rand` → Shuffle results randomly.
 
 ---
 
@@ -323,5 +366,6 @@ This example:
 
 - Six **system columns** (`id`, `title`, `content`, `date_created`, `date_modified`, `hidden`) cannot be deleted, renamed, moved, or retyped.  
 - All user-defined columns must declare a valid type (see column types above).
-- Tags require registration before being assigned to rows.  
+- Tags require registration before being assigned to rows.
+- Custom columns can define regex validation rules using the rule endpoint.
 - Rich text is stored as plain strings and must be formatted and handled on the frontend.
