@@ -299,6 +299,34 @@ DELETE {{baseURL}}/api/database/:dbId/table/:tableName/row/:rowId
 
 ---
 
+### Backup Endpoints
+
+#### Create a Backup
+```http
+POST {{baseURL}}/api/backup/:dbId
+```
+Creates a full backup of the specified database, including metadata.  
+The backup is stored in the server’s `backups` directory with a unique timestamp.
+
+#### List All Backups
+```http
+GET {{baseURL}}/api/backups/retrieve
+```
+Retrieves a list of all existing database backups with their timestamps and IDs.
+
+#### Recover a Backup
+```http
+POST {{baseURL}}/api/recover/:backupName
+```
+Restores a backup as a new database in the main database directory.  
+The restored database will be renamed using the pattern `restored_{originalName}_{timestamp}`.
+
+#### Delete a Backup
+```http
+DELETE {{baseURL}}/api/backup/:backupName
+```
+Deletes the specified backup and its metadata from the `backups` directory.
+
 ## Complex Searching and Pagination
 
 The API supports advanced querying and sorting for table rows. This allows fine-grained control over which rows are returned and in what order.
