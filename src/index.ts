@@ -4,6 +4,7 @@ import dataRouter from './routes/database';
 import tableRouter from './routes/table';
 import columnRouter from './routes/column';
 import rowRouter from './routes/row';
+import recoveryRouter from './routes/recovery';
 
 
 const app = express();
@@ -15,6 +16,7 @@ app.use('/api/database', dataRouter);
 app.use('/api/database', tableRouter);
 app.use('/api/database', columnRouter);
 app.use('/api/database', rowRouter);
+app.use('/api/database', recoveryRouter);
 
 app.get('/', (req, res) => {
     res.send('API is running');
