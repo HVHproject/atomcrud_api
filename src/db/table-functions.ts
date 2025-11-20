@@ -266,6 +266,23 @@ export function getTable(
 
     const hidden = metadata.tables?.[tableName]?.hidden ?? false;
 
+    type CountRow = { count: number };
+
+    // Total rows (ignore filters/search)
+    const totalRows = (db.prepare(`SELECT COUNT(*) AS count FROM ${tableName}`).get() as CountRow).count;
+
+    // Filtered rows (ignore pagination)
+    const filteredRowsParams = [...params];
+
+    // Remove any pagination params (last 1 or 2 items if limit/offset were added)
+    if (typeof options?.limit === 'number') filteredRowsParams.pop();
+    if (typeof options?.offset === 'number') filteredRowsParams.pop();
+
+    let filteredRowsQuery = `SELECT COUNT(*) AS count FROM ${tableName}`;
+    if (filters.length) filteredRowsQuery += ` WHERE ` + filters.join(' AND ');
+
+    const filteredRows = (db.prepare(filteredRowsQuery).get(...filteredRowsParams) as CountRow).count;
+
     db.close();
 
     return {
@@ -273,6 +290,8 @@ export function getTable(
         hidden,
         columns,
         rows,
+        totalRows,
+        filteredRows
     };
 }
 

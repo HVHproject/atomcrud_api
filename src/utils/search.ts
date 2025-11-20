@@ -49,17 +49,70 @@ function extractRegexPattern(node: any): string {
     return t;
 }
 
-function buildComparisonForNumeric(colName: string, rawTerm: string, params: any[]): string | null {
-    const m = rawTerm.match(/^(>=|<=|>|<)(.+)$/);
+function buildComparisonForNumeric(
+    colName: string,
+    colType: ColumnDef['type'],
+    rawTerm: string,
+    params: any[]
+): string | null {
+    const isDateLike = /^\s*\d{4}[\/-]\d{1,2}[\/-]\d{1,2}\s*$/.test(rawTerm)
+        || /^\s*(>=|<=|>|<)\s*\d{4}[\/-]\d{1,2}[\/-]\d{1,2}\s*$/.test(rawTerm);
+
+    function parseDateToTimestamp(dateStr: string): number | null {
+        const clean = dateStr.trim().replace(/-/g, '/');
+        const d = new Date(clean);
+        return isNaN(d.getTime()) ? null : d.getTime();
+    }
+
+    if (colType === 'date' && isDateLike) {
+        const m = rawTerm.match(/^(>=|<=|>|<)\s*(.+)$/);
+        if (m) {
+            const op = m[1];
+            const date = parseDateToTimestamp(m[2]);
+            if (date == null) return null;
+
+            const dayStart = new Date(date); dayStart.setHours(0, 0, 0, 0);
+            const dayEnd = new Date(date); dayEnd.setHours(23, 59, 59, 999);
+
+            let value;
+            if (op === '>') value = dayEnd.getTime();
+            if (op === '>=') value = dayStart.getTime();
+            if (op === '<') value = dayStart.getTime();
+            if (op === '<=') value = dayEnd.getTime();
+
+            params.push(value);
+            return `${colName} ${op} ?`;
+        }
+
+        const exact = parseDateToTimestamp(rawTerm);
+        if (exact != null) {
+            const dayStart = new Date(exact); dayStart.setHours(0, 0, 0, 0);
+            const dayEnd = new Date(exact); dayEnd.setHours(23, 59, 59, 999);
+
+            params.push(dayStart.getTime(), dayEnd.getTime());
+            return `${colName} BETWEEN ? AND ?`;
+        }
+
+        return null;
+    }
+
+    const numericCol = (['integer', 'float', 'rating', 'advanced_rating', 'date', 'boolean', 'custom'].includes(colType))
+        ? `CAST(${colName} AS REAL)`
+        : colName;
+
+    const m = rawTerm.match(/^(>=|<=|>|<)\s*(.+)$/);
     if (m) {
         const val = parseFloat(m[2]);
+        if (isNaN(val)) return null;
         params.push(val);
-        return `${colName} ${m[1]} ?`;
+        return `${numericCol} ${m[1]} ?`;
     }
+
     if (!isNaN(Number(rawTerm))) {
         params.push(Number(rawTerm));
-        return `${colName} = ?`;
+        return `${numericCol} = ?`;
     }
+
     return null;
 }
 
@@ -96,6 +149,8 @@ function buildWhereFromNode(node: any, params: any[], columns: ColumnDef[]): str
         if (node.field === '<implicit>') colName = 'title';
 
         const colType = getColType(columns, colName);
+        const termStr = String(node.term);
+        const wantsNumeric = /^[><]=?|^=/.test(termStr);
 
         // Regex
         if (isRegexNode(node)) {
@@ -107,7 +162,7 @@ function buildWhereFromNode(node: any, params: any[], columns: ColumnDef[]): str
         }
 
         // Numeric (including boolean treated as 0/1)
-        if (numericTypes.has(colType)) {
+        if (numericTypes.has(colType) || (colType === 'custom' && wantsNumeric)) {
             if (colType === 'boolean') {
                 const boolVal = coerceBoolean(String(node.term));
                 if (boolVal !== null) {
@@ -117,7 +172,7 @@ function buildWhereFromNode(node: any, params: any[], columns: ColumnDef[]): str
                         : `${colName} = ?`;
                 }
             }
-            const numericSQL = buildComparisonForNumeric(colName, String(node.term), params);
+            const numericSQL = buildComparisonForNumeric(colName, colType, String(node.term), params);
             if (numericSQL) {
                 return negate
                     ? `(NOT ${numericSQL})`
@@ -126,7 +181,7 @@ function buildWhereFromNode(node: any, params: any[], columns: ColumnDef[]): str
         }
 
         // Default LIKE
-        params.push(`%${String(node.term)}%`);
+        params.push(`%${termStr}%`);
         return negate
             ? `(NOT ${colName} LIKE ? COLLATE NOCASE)`
             : `${colName} LIKE ? COLLATE NOCASE`;
