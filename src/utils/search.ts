@@ -55,8 +55,9 @@ function buildComparisonForNumeric(
     rawTerm: string,
     params: any[]
 ): string | null {
-    const isDateLike = /^\s*\d{4}[\/-]\d{1,2}[\/-]\d{1,2}\s*$/.test(rawTerm)
-        || /^\s*(>=|<=|>|<)\s*\d{4}[\/-]\d{1,2}[\/-]\d{1,2}\s*$/.test(rawTerm);
+    const isDateLike =
+        /^\s*\d{4}[\/-]\d{1,2}[\/-]\d{1,2}\s*$/.test(rawTerm) ||
+        /^\s*(>=|<=|>|<)\s*\d{4}[\/-]\d{1,2}[\/-]\d{1,2}\s*$/.test(rawTerm);
 
     function parseDateToTimestamp(dateStr: string): number | null {
         const clean = dateStr.trim().replace(/-/g, '/');
@@ -96,9 +97,10 @@ function buildComparisonForNumeric(
         return null;
     }
 
-    const numericCol = (['integer', 'float', 'rating', 'advanced_rating', 'date', 'boolean', 'custom'].includes(colType))
-        ? `CAST(${colName} AS REAL)`
-        : colName;
+    const numericCol =
+        ['integer', 'float', 'rating', 'advanced_rating', 'date', 'boolean', 'custom'].includes(colType)
+            ? `CAST(${colName} AS REAL)`
+            : colName;
 
     const m = rawTerm.match(/^(>=|<=|>|<)\s*(.+)$/);
     if (m) {
@@ -119,12 +121,10 @@ function buildComparisonForNumeric(
 function buildWhereFromNode(node: any, params: any[], columns: ColumnDef[]): string {
     if (!node) return '1';
 
-    // Some ASTs wrap a term inside { left: <term> } with no operator/right
     if (node.left && !node.right && !node.operator && node.field == null && node.term == null) {
         return buildWhereFromNode(node.left, params, columns);
     }
 
-    // Handle NOT via prefix (!term) or !field
     let negate = false;
     if (node.prefix === '!') {
         negate = true;
@@ -135,15 +135,18 @@ function buildWhereFromNode(node: any, params: any[], columns: ColumnDef[]): str
         node = { ...node, field: node.field.slice(1) };
     }
 
-    // Binary operators: AND / OR
     if (node.left && node.right && node.operator) {
         const leftSQL = buildWhereFromNode(node.left, params, columns);
         const rightSQL = buildWhereFromNode(node.right, params, columns);
+
+        if (String(node.operator).toLowerCase() === '<implicit>') {
+            return `(${leftSQL} AND ${rightSQL})`;
+        }
+
         const op = String(node.operator).toUpperCase();
         return `(${leftSQL} ${op} ${rightSQL})`;
     }
 
-    // Fielded term
     if (node.field && node.term != null) {
         let colName = resolveFieldName(node.field, columns) || 'title';
         if (node.field === '<implicit>') colName = 'title';
@@ -152,7 +155,6 @@ function buildWhereFromNode(node: any, params: any[], columns: ColumnDef[]): str
         const termStr = String(node.term);
         const wantsNumeric = /^[><]=?|^=/.test(termStr);
 
-        // Regex
         if (isRegexNode(node)) {
             const pattern = extractRegexPattern(node);
             params.push(pattern);
@@ -161,33 +163,26 @@ function buildWhereFromNode(node: any, params: any[], columns: ColumnDef[]): str
                 : `${colName} REGEXP ?`;
         }
 
-        // Numeric (including boolean treated as 0/1)
         if (numericTypes.has(colType) || (colType === 'custom' && wantsNumeric)) {
             if (colType === 'boolean') {
                 const boolVal = coerceBoolean(String(node.term));
                 if (boolVal !== null) {
                     params.push(boolVal);
-                    return negate
-                        ? `(NOT ${colName} = ?)`
-                        : `${colName} = ?`;
+                    return negate ? `(NOT ${colName} = ?)` : `${colName} = ?`;
                 }
             }
             const numericSQL = buildComparisonForNumeric(colName, colType, String(node.term), params);
             if (numericSQL) {
-                return negate
-                    ? `(NOT ${numericSQL})`
-                    : numericSQL;
+                return negate ? `(NOT ${numericSQL})` : numericSQL;
             }
         }
 
-        // Default LIKE
         params.push(`%${termStr}%`);
         return negate
             ? `(NOT ${colName} LIKE ? COLLATE NOCASE)`
             : `${colName} LIKE ? COLLATE NOCASE`;
     }
 
-    // Bare term (implicit title search)
     if (node.term != null) {
         const colName = 'title';
 
@@ -205,7 +200,6 @@ function buildWhereFromNode(node: any, params: any[], columns: ColumnDef[]): str
             : `${colName} LIKE ? COLLATE NOCASE`;
     }
 
-    // Grouped terms (default AND)
     if (Array.isArray(node)) {
         const subClauses = node
             .map((n) => buildWhereFromNode(n, params, columns))
@@ -222,7 +216,6 @@ export function parseSearchQuery(queryString: string, columns: ColumnDef[]) {
         return { where: '1', params: [] };
     }
 
-    // Replace & and | with AND and OR before parsing
     queryString = queryString
         .replace(/\band\b/gi, 'AND')
         .replace(/\bor\b/gi, 'OR');
@@ -237,6 +230,22 @@ export function parseSearchQuery(queryString: string, columns: ColumnDef[]) {
         if (Array.isArray(parsed) && parsed.length === 1 && parsed[0]?.term != null) {
             parsed = parsed[0];
         }
+
+        function normalizeImplicit(node: any): any {
+            if (!node || typeof node !== 'object') return node;
+
+            if (node.field && String(node.field).toLowerCase() === 'implicit') {
+                node.field = '<implicit>';
+            }
+
+            if (node.left) normalizeImplicit(node.left);
+            if (node.right) normalizeImplicit(node.right);
+
+            return node;
+        }
+
+        parsed = normalizeImplicit(parsed);
+
     } catch {
         const terms = queryString.split(/\s+/);
         const params: any[] = [];
