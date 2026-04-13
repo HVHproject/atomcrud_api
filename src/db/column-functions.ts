@@ -4,8 +4,7 @@ import Database from 'better-sqlite3';
 import type { ColumnDef, DatabaseMetadata, ColumnType, TagDef } from '../types';
 import { columnTypeMap } from '../utils/type-mapping';
 import { normalizeName } from '../utils/normalize-name';
-
-const DB_FOLDER = path.resolve('./databases');
+import { getDbPaths } from '../utils/db-paths';
 
 const untouchable = ['id', 'title', 'content', 'date_created', 'date_modified', 'hidden'];
 
@@ -16,12 +15,12 @@ export function createColumn(
     rawName: string,
     customType: string,
     hidden = false,
-    index?: number
+    index?: number,
+    visualization?: string
 ): ColumnDef {
     const columnName = normalizeName(rawName);
+    const { dbPath, metaPath } = getDbPaths(dbId);
 
-    const metaPath = path.join(DB_FOLDER, `${dbId}.meta.json`);
-    const dbPath = path.join(DB_FOLDER, `${dbId}.sqlite`);
     if (!fs.existsSync(metaPath) || !fs.existsSync(dbPath))
         throw new Error(`Database or metadata file not found for '${dbId}'`);
 
@@ -40,31 +39,37 @@ export function createColumn(
     if (!realSqlType) throw new Error(`Unknown column type '${customType}'`);
 
     db.prepare(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${realSqlType}`).run();
+    db.close();
 
-    // Determine index
     const currentColumnCount = Object.keys(columns).length;
     const assignedIndex = typeof index === 'number' ? index : currentColumnCount;
+    const isTagType = customType === 'multi_tag' || customType === 'single_tag';
 
     columns[columnName] = {
         type: customType as ColumnType,
         hidden,
         index: assignedIndex,
-        ...(customType === 'multi_tag' || customType === 'single_tag'
-            ? { tags: [] as TagDef[] }
-            : {}),
+        visualization: visualization ?? '',
+        ...(isTagType ? { tags: [] as TagDef[], tagLock: false, linkedList: '' } : {}),
         ...(customType === 'custom' ? { rule: '' } : {}),
     };
 
     metadata.modifiedAt = new Date().toISOString();
-
     fs.writeFileSync(metaPath, JSON.stringify(metadata, null, 2));
 
-    return { name: columnName, type: customType as ColumnType, hidden, index: assignedIndex };
+    return {
+        name: columnName,
+        type: customType as ColumnType,
+        hidden,
+        index: assignedIndex,
+        visualization: visualization ?? '',
+        ...(isTagType ? { tags: [], tagLock: false, linkedList: '' } : {}),
+    };
 }
 
 // Gets all columns from a table
 export function getAllColumns(dbId: string, tableName: string): ColumnDef[] {
-    const metaPath = path.join(DB_FOLDER, `${dbId}.meta.json`);
+    const { metaPath } = getDbPaths(dbId);
     if (!fs.existsSync(metaPath)) throw new Error(`Metadata for '${dbId}' not found.`);
 
     const metadata: DatabaseMetadata = JSON.parse(fs.readFileSync(metaPath, 'utf-8'));
@@ -77,25 +82,23 @@ export function getAllColumns(dbId: string, tableName: string): ColumnDef[] {
             type: colDef.type as ColumnType,
             hidden: colDef.hidden ?? false,
             index: typeof colDef.index === 'number' ? colDef.index : -1,
+            visualization: colDef.visualization ?? '',
         };
-
-        // Include tags array if it's a tag column
         if (colDef.type === 'single_tag' || colDef.type === 'multi_tag') {
             baseDef.tags = Array.isArray(colDef.tags) ? colDef.tags : [];
+            baseDef.tagLock = colDef.tagLock ?? false;
+            baseDef.linkedList = colDef.linkedList ?? '';
         }
-
-        // Include rule if it exists
         if (colDef.rule !== undefined) {
             baseDef.rule = colDef.rule;
         }
-
         return baseDef;
     });
 }
 
-// Gets a column from a table
+// Gets a single column from a table
 export function getSingleColumn(dbId: string, tableName: string, columnName: string): ColumnDef {
-    const metaPath = path.join(DB_FOLDER, `${dbId}.meta.json`);
+    const { metaPath } = getDbPaths(dbId);
     if (!fs.existsSync(metaPath)) throw new Error(`Metadata for '${dbId}' not found.`);
 
     const metadata: DatabaseMetadata = JSON.parse(fs.readFileSync(metaPath, 'utf-8'));
@@ -108,22 +111,20 @@ export function getSingleColumn(dbId: string, tableName: string, columnName: str
         type: colDef.type as ColumnType,
         hidden: colDef.hidden ?? false,
         index: typeof colDef.index === 'number' ? colDef.index : -1,
+        visualization: colDef.visualization ?? '',
     };
-
-    // Include tags array if it's a tag column
     if (colDef.type === 'single_tag' || colDef.type === 'multi_tag') {
         result.tags = Array.isArray(colDef.tags) ? colDef.tags : [];
+        result.tagLock = colDef.tagLock ?? false;
+        result.linkedList = colDef.linkedList ?? '';
     }
-
-    // Include rule if it exists
     if (colDef.rule !== undefined) {
         result.rule = colDef.rule;
     }
-
     return result;
 }
 
-// Updates name, or deletes old column and creates a new column with a name and type
+// Updates name, or drops + re-adds a column with a new type
 export function updateColumnNameOrType(
     dbId: string,
     tableName: string,
@@ -136,9 +137,7 @@ export function updateColumnNameOrType(
     if (untouchable.includes(oldName))
         throw new Error(`Column '${oldName}' is protected and cannot be modified.`);
 
-    const metaPath = path.join(DB_FOLDER, `${dbId}.meta.json`);
-    const dbPath = path.join(DB_FOLDER, `${dbId}.sqlite`);
-
+    const { dbPath, metaPath } = getDbPaths(dbId);
     if (!fs.existsSync(metaPath) || !fs.existsSync(dbPath))
         throw new Error(`Database or metadata file not found for '${dbId}'`);
 
@@ -151,36 +150,31 @@ export function updateColumnNameOrType(
     const currentDef = columns[oldName];
     const finalName = newName ? normalizeName(newName) : oldName;
 
-    // 1) Rename if needed
     if (newName && finalName !== oldName) {
         db.prepare(`ALTER TABLE ${tableName} RENAME COLUMN ${oldName} TO ${finalName}`).run();
-
         columns[finalName] = { ...currentDef };
         delete columns[oldName];
     }
 
-    // 2) Change type if needed — drop + re-add column (data loss warning)
     if (newType && newType !== currentDef.type) {
         const realSqlType = columnTypeMap[newType];
         if (!realSqlType) throw new Error(`Unknown column type '${newType}'`);
 
-        const nameForTypeChange = finalName; // Might be renamed above
+        db.prepare(`ALTER TABLE ${tableName} DROP COLUMN ${finalName}`).run();
+        db.prepare(`ALTER TABLE ${tableName} ADD COLUMN ${finalName} ${realSqlType}`).run();
 
-        // Drop old column
-        db.prepare(`ALTER TABLE ${tableName} DROP COLUMN ${nameForTypeChange}`).run();
-
-        // Add new column with same name, new type
-        db.prepare(`ALTER TABLE ${tableName} ADD COLUMN ${nameForTypeChange} ${realSqlType}`).run();
-
-        columns[nameForTypeChange] = {
+        const isTagType = newType === 'multi_tag' || newType === 'single_tag';
+        columns[finalName] = {
             type: newType as ColumnType,
             hidden: currentDef.hidden ?? false,
             index: currentDef.index ?? -1,
-            ...(newType === 'tags' ? { tags: [] as TagDef[] } : {}),
+            visualization: currentDef.visualization ?? '',
+            ...(isTagType ? { tags: [] as TagDef[], tagLock: false, linkedList: '' } : {}),
             ...(newType === 'custom' ? { rule: currentDef.rule ?? '' } : {}),
         };
     }
 
+    db.close();
     metadata.modifiedAt = new Date().toISOString();
     fs.writeFileSync(metaPath, JSON.stringify(metadata, null, 2));
 
@@ -189,10 +183,11 @@ export function updateColumnNameOrType(
         type: columns[finalName].type,
         hidden: columns[finalName].hidden ?? false,
         index: typeof columns[finalName].index === 'number' ? columns[finalName].index : -1,
+        visualization: columns[finalName].visualization ?? '',
     };
 }
 
-// changes column visibility
+// Changes column visibility
 export function updateColumnVisibility(
     dbId: string,
     tableName: string,
@@ -200,8 +195,7 @@ export function updateColumnVisibility(
     hidden: boolean
 ): ColumnDef {
     const columnName = normalizeName(rawName);
-
-    const metaPath = path.join(DB_FOLDER, `${dbId}.meta.json`);
+    const { metaPath } = getDbPaths(dbId);
     if (!fs.existsSync(metaPath)) throw new Error(`Metadata for '${dbId}' not found.`);
 
     const metadata: DatabaseMetadata = JSON.parse(fs.readFileSync(metaPath, 'utf-8'));
@@ -218,17 +212,71 @@ export function updateColumnVisibility(
         type: columns[columnName].type,
         hidden,
         index: typeof columns[columnName].index === 'number' ? columns[columnName].index : -1,
+        visualization: columns[columnName].visualization ?? '',
     };
 }
 
-// Swap index of two columns in a table metadata
+/**
+ * Sets the visualization hint on a column. This is a free-form string that
+ * the front end can use to decide how to render the column (e.g. "progress",
+ * "stars", "color", "pill", "avatar").
+ */
+export function updateColumnVisualization(
+    dbId: string,
+    tableName: string,
+    rawName: string,
+    visualization: string
+): ColumnDef {
+    const columnName = normalizeName(rawName);
+    const { metaPath } = getDbPaths(dbId);
+    if (!fs.existsSync(metaPath)) throw new Error(`Metadata for '${dbId}' not found.`);
+
+    const metadata: DatabaseMetadata = JSON.parse(fs.readFileSync(metaPath, 'utf-8'));
+    const columns = metadata.tables?.[tableName]?.columns;
+    if (!columns?.[columnName])
+        throw new Error(`Column '${columnName}' not found in metadata.`);
+
+    columns[columnName].visualization = visualization;
+    metadata.modifiedAt = new Date().toISOString();
+    fs.writeFileSync(metaPath, JSON.stringify(metadata, null, 2));
+
+    return getSingleColumn(dbId, tableName, columnName);
+}
+
+/**
+ * Sets tagLock on a single_tag or multi_tag column.
+ * Cannot be called while the column is linked to a GlobalTagList
+ * (link controls the lock automatically).
+ */
+export function updateTagLock(
+    dbId: string,
+    tableName: string,
+    columnName: string,
+    locked: boolean
+): void {
+    const { metaPath } = getDbPaths(dbId);
+    if (!fs.existsSync(metaPath)) throw new Error(`Metadata for '${dbId}' not found.`);
+
+    const metadata: DatabaseMetadata = JSON.parse(fs.readFileSync(metaPath, 'utf-8'));
+    const col = metadata.tables?.[tableName]?.columns?.[columnName];
+    if (!col) throw new Error(`Column '${columnName}' not found.`);
+    if (col.type !== 'single_tag' && col.type !== 'multi_tag')
+        throw new Error(`tagLock only applies to single_tag / multi_tag columns.`);
+    if (col.linkedList)
+        throw new Error(`Column '${columnName}' is linked to a GlobalTagList. Unlink it first to change tagLock.`);
+
+    col.tagLock = locked;
+    metadata.modifiedAt = new Date().toISOString();
+    fs.writeFileSync(metaPath, JSON.stringify(metadata, null, 2));
+}
+
+// Swap index of two columns in table metadata
 export function swapColumnIndex(dbId: string, tableName: string, colName: string, targetIndex: number): void {
     const columnName = normalizeName(colName);
-
     if (untouchable.includes(columnName))
         throw new Error(`Column '${columnName}' is protected and cannot be reordered.`);
 
-    const metaPath = path.join(DB_FOLDER, `${dbId}.meta.json`);
+    const { metaPath } = getDbPaths(dbId);
     if (!fs.existsSync(metaPath))
         throw new Error(`Metadata file not found for '${dbId}'`);
 
@@ -241,14 +289,11 @@ export function swapColumnIndex(dbId: string, tableName: string, colName: string
     if (typeof sourceIndex !== 'number' || sourceIndex < 0)
         throw new Error(`Invalid index for column '${columnName}'`);
 
-    // Find column with targetIndex
     const targetEntry = Object.entries(columns).find(([, colDef]) => colDef.index === targetIndex);
     if (!targetEntry)
         throw new Error(`No column found with order ${targetIndex}`);
 
-    const [targetColumnName, targetColDef] = targetEntry;
-
-    // Swap indexes
+    const [targetColumnName] = targetEntry;
     columns[columnName].index = targetIndex;
     columns[targetColumnName].index = sourceIndex;
 
@@ -259,11 +304,10 @@ export function swapColumnIndex(dbId: string, tableName: string, colName: string
 // Move a column to a new index, shifting others
 export function moveColumnIndex(dbId: string, tableName: string, colName: string, newIndex: number): void {
     const columnName = normalizeName(colName);
-
     if (untouchable.includes(columnName))
         throw new Error(`Column '${columnName}' is protected and cannot be reordered.`);
 
-    const metaPath = path.join(DB_FOLDER, `${dbId}.meta.json`);
+    const { metaPath } = getDbPaths(dbId);
     if (!fs.existsSync(metaPath))
         throw new Error(`Metadata file not found for '${dbId}'`);
 
@@ -276,33 +320,23 @@ export function moveColumnIndex(dbId: string, tableName: string, colName: string
     if (typeof oldIndex !== 'number' || oldIndex < 0)
         throw new Error(`Invalid index for column '${columnName}'`);
 
-    if (oldIndex === newIndex) return; // no move needed
+    if (oldIndex === newIndex) return;
 
-    // Shift other columns' indexes accordingly
     for (const [, colDef] of Object.entries(columns)) {
         if (typeof colDef.index !== 'number' || colDef.index < 0) continue;
-
         if (oldIndex < newIndex) {
-            // moving down — decrement indexes between oldIndex+1 and newIndex
-            if (colDef.index > oldIndex && colDef.index <= newIndex) {
-                colDef.index--;
-            }
+            if (colDef.index > oldIndex && colDef.index <= newIndex) colDef.index--;
         } else {
-            // moving up — increment indexes between newIndex and oldIndex-1
-            if (colDef.index >= newIndex && colDef.index < oldIndex) {
-                colDef.index++;
-            }
+            if (colDef.index >= newIndex && colDef.index < oldIndex) colDef.index++;
         }
     }
 
-    // Set the column's index to newIndex
     columns[columnName].index = newIndex;
-
     metadata.modifiedAt = new Date().toISOString();
     fs.writeFileSync(metaPath, JSON.stringify(metadata, null, 2));
 }
 
-// Adds a tag to a list of possible tags
+// Adds a tag to a column's possible tag list
 export function registerTag(
     dbId: string,
     tableName: string,
@@ -310,48 +344,48 @@ export function registerTag(
     tagName: string,
     description: string = ''
 ): void {
-    const metaPath = path.join(DB_FOLDER, `${dbId}.meta.json`);
+    const { metaPath } = getDbPaths(dbId);
     if (!fs.existsSync(metaPath)) throw new Error(`Metadata for database '${dbId}' not found`);
 
     const metadata: DatabaseMetadata = JSON.parse(fs.readFileSync(metaPath, 'utf-8'));
     const column = metadata.tables?.[tableName]?.columns?.[columnName];
     if (!column) throw new Error(`Column '${columnName}' not found`);
-    if (column.type !== 'single_tag' && column.type !== 'multi_tag') throw new Error(`Column '${columnName}' is not of type 'tags'`);
+    if (column.type !== 'single_tag' && column.type !== 'multi_tag')
+        throw new Error(`Column '${columnName}' is not of type single_tag / multi_tag`);
+    if (column.tagLock)
+        throw new Error(`Column '${columnName}' has tagLock enabled. Tags cannot be added.`);
 
     const normalizedName = normalizeName(tagName);
-
     column.tags ??= [];
     if (column.tags.some(t => t.name === normalizedName)) {
         throw new Error(`Tag '${normalizedName}' already exists in column '${columnName}'`);
     }
 
-    column.tags.push({
-        name: normalizedName,
-        description: description.trim()
-    });
-
+    column.tags.push({ name: normalizedName, description: description.trim() });
     metadata.modifiedAt = new Date().toISOString();
     fs.writeFileSync(metaPath, JSON.stringify(metadata, null, 2));
 }
 
-// removes a tag from a list of possible tags
+// Removes a tag from a column's possible tag list
 export function unregisterTag(
     dbId: string,
     tableName: string,
     columnName: string,
     tagName: string
 ): void {
-    const metaPath = path.join(DB_FOLDER, `${dbId}.meta.json`);
+    const { metaPath } = getDbPaths(dbId);
     if (!fs.existsSync(metaPath)) throw new Error(`Metadata for database '${dbId}' not found`);
 
     const metadata: DatabaseMetadata = JSON.parse(fs.readFileSync(metaPath, 'utf-8'));
     const column = metadata.tables?.[tableName]?.columns?.[columnName];
     if (!column) throw new Error(`Column '${columnName}' not found`);
-    if (column.type === 'single_tag' || column.type === 'multi_tag') throw new Error(`Column '${columnName}' is not of type 'tags'`);
+    if (column.type !== 'single_tag' && column.type !== 'multi_tag')
+        throw new Error(`Column '${columnName}' is not of type single_tag / multi_tag`);
+    if (column.tagLock)
+        throw new Error(`Column '${columnName}' has tagLock enabled. Tags cannot be removed.`);
 
     const normalizedName = normalizeName(tagName);
     column.tags = (column.tags ?? []).filter(t => t.name !== normalizedName);
-
     metadata.modifiedAt = new Date().toISOString();
     fs.writeFileSync(metaPath, JSON.stringify(metadata, null, 2));
 }
@@ -362,7 +396,7 @@ export function updateColumnRule(
     columnName: string,
     rule: string
 ): void {
-    const metaPath = path.join(DB_FOLDER, `${dbId}.meta.json`);
+    const { metaPath } = getDbPaths(dbId);
     if (!fs.existsSync(metaPath)) throw new Error(`Metadata file not found for '${dbId}'`);
 
     const metadata: DatabaseMetadata = JSON.parse(fs.readFileSync(metaPath, 'utf-8'));
@@ -373,30 +407,22 @@ export function updateColumnRule(
     if (!column) throw new Error(`Column '${columnName}' not found in metadata.`);
     if (column.type !== 'custom') throw new Error(`Only custom columns can have regex rules.`);
 
-    // Validate regex
-    try {
-        new RegExp(rule);
-    } catch {
+    try { new RegExp(rule); } catch {
         throw new Error(`Invalid regex expression: '${rule}'`);
     }
 
-    // Update rule and save metadata
     column.rule = rule;
     metadata.modifiedAt = new Date().toISOString();
     fs.writeFileSync(metaPath, JSON.stringify(metadata, null, 2));
 }
 
-
-// Deletes unprotected column
+// Deletes an unprotected column
 export function deleteColumn(dbId: string, tableName: string, rawName: string): void {
     const columnName = normalizeName(rawName);
-
     if (untouchable.includes(columnName))
         throw new Error(`Column '${columnName}' is protected and cannot be deleted.`);
 
-    const metaPath = path.join(DB_FOLDER, `${dbId}.meta.json`);
-    const dbPath = path.join(DB_FOLDER, `${dbId}.sqlite`);
-
+    const { dbPath, metaPath } = getDbPaths(dbId);
     if (!fs.existsSync(metaPath) || !fs.existsSync(dbPath))
         throw new Error(`Database or metadata file not found for '${dbId}'`);
 
@@ -412,16 +438,16 @@ export function deleteColumn(dbId: string, tableName: string, rawName: string): 
         db.prepare(`ALTER TABLE ${tableName} DROP COLUMN ${columnName}`).run();
     } catch (err) {
         throw new Error(`Failed to drop column '${columnName}': ${(err as Error).message}`);
+    } finally {
+        db.close();
     }
 
-    // Remove the deleted column metadata
     delete columns[columnName];
 
-    // Shift index down by 1 for columns with index > deletedIndex
     if (deletedIndex >= 0) {
-        for (const [colName, colDef] of Object.entries(columns)) {
+        for (const [, colDef] of Object.entries(columns)) {
             if (typeof colDef.index === 'number' && colDef.index > deletedIndex) {
-                colDef.index = colDef.index - 1;
+                colDef.index--;
             }
         }
     }

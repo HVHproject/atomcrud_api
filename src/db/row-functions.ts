@@ -4,11 +4,7 @@ import Database from 'better-sqlite3';
 import type { DatabaseMetadata, ColumnDef } from '../types';
 import { normalizeName } from '../utils/normalize-name';
 import { processTagValue } from '../utils/process-tag-value';
-
-const DB_FOLDER = path.resolve('./databases');
-if (!fs.existsSync(DB_FOLDER)) {
-    fs.mkdirSync(DB_FOLDER);
-}
+import { getDbPaths } from '../utils/db-paths';
 
 function validateColumnValue(colMeta: ColumnDef, value: any): any {
     const { type } = colMeta;
@@ -64,9 +60,7 @@ function validateColumnValue(colMeta: ColumnDef, value: any): any {
             }
             if (colMeta.rule) {
                 let regex: RegExp;
-                try {
-                    regex = new RegExp(colMeta.rule);
-                } catch {
+                try { regex = new RegExp(colMeta.rule); } catch {
                     throw new Error(`Invalid regex rule for column: ${colMeta.rule}`);
                 }
                 if (!regex.test(value)) {
@@ -101,29 +95,24 @@ function validateColumnValue(colMeta: ColumnDef, value: any): any {
 
 // POST create a new row
 export function createRow(dbId: string, tableName: string, data: Record<string, any>) {
-    const dbPath = path.join(DB_FOLDER, `${dbId}.sqlite`);
+    const { dbPath, metaPath } = getDbPaths(dbId);
     if (!fs.existsSync(dbPath)) throw new Error(`Database '${dbId}' not found`);
-
-    const metaPath = path.join(DB_FOLDER, `${dbId}.meta.json`);
     if (!fs.existsSync(metaPath)) throw new Error(`Metadata for database '${dbId}' not found`);
 
     const metadata: DatabaseMetadata = JSON.parse(fs.readFileSync(metaPath, 'utf-8'));
     const tableMeta = metadata.tables?.[tableName];
     if (!tableMeta) throw new Error(`Table '${tableName}' not found`);
 
-    // Normalize incoming column keys
     const normalizedData: Record<string, any> = {};
     for (const key of Object.keys(data)) {
         if (key === 'date_modified') continue;
         normalizedData[normalizeName(key)] = data[key];
     }
 
-    // Ensure title is provided and not just whitespace
     if (!normalizedData.title || String(normalizedData.title).trim() === '') {
         throw new Error(`Title is required and cannot be blank`);
     }
 
-    // Default values
     const now = Date.now();
     const rowData: Record<string, any> = {
         id: undefined,
@@ -134,19 +123,17 @@ export function createRow(dbId: string, tableName: string, data: Record<string, 
         hidden: 0,
     };
 
-    // Validate and populate all columns
-for (const [colName, colMeta] of Object.entries(tableMeta.columns)) {
-    if (colName === "id") continue;
-
-    if (colName in normalizedData) {
-        rowData[colName] = validateColumnValue(
-            { ...colMeta, name: colName } as ColumnDef,
-            normalizedData[colName]
-        );
-    } else if (!(colName in rowData)) {
-        continue;
+    for (const [colName, colMeta] of Object.entries(tableMeta.columns)) {
+        if (colName === "id") continue;
+        if (colName in normalizedData) {
+            rowData[colName] = validateColumnValue(
+                { ...colMeta, name: colName } as ColumnDef,
+                normalizedData[colName]
+            );
+        } else if (!(colName in rowData)) {
+            continue;
+        }
     }
-}
 
     const db = new Database(dbPath);
     const colNames = Object.keys(rowData).filter(k => rowData[k] !== undefined);
@@ -162,7 +149,7 @@ for (const [colName, colMeta] of Object.entries(tableMeta.columns)) {
 
 // GET a single row
 export function getSingleRow(dbId: string, tableName: string, rowId: string) {
-    const dbPath = path.join(DB_FOLDER, `${dbId}.sqlite`);
+    const { dbPath } = getDbPaths(dbId);
     if (!fs.existsSync(dbPath)) throw new Error(`Database '${dbId}' not found`);
 
     const db = new Database(dbPath);
@@ -180,12 +167,10 @@ export function patchRowVisibility(dbId: string, tableName: string, rowId: strin
         throw new Error('Invalid hidden value. Must be 0 or 1.');
     }
 
-    const dbPath = path.join(DB_FOLDER, `${dbId}.sqlite`);
+    const { dbPath, metaPath } = getDbPaths(dbId);
     if (!fs.existsSync(dbPath)) throw new Error(`Database '${dbId}' not found`);
-
-    // Check table metadata to ensure 'hidden' column exists and is boolean/integer
-    const metaPath = path.join(DB_FOLDER, `${dbId}.meta.json`);
     if (!fs.existsSync(metaPath)) throw new Error(`Metadata for database '${dbId}' not found`);
+
     const metadata: DatabaseMetadata = JSON.parse(fs.readFileSync(metaPath, 'utf-8'));
     const tableMeta = metadata.tables?.[tableName];
     if (!tableMeta) throw new Error(`Table '${tableName}' not found`);
@@ -195,10 +180,8 @@ export function patchRowVisibility(dbId: string, tableName: string, rowId: strin
 
     const db = new Database(dbPath);
     const now = Date.now();
-
-    // Update hidden and date_modified
     const stmt = db.prepare(`
-        UPDATE "${tableName}" 
+        UPDATE "${tableName}"
         SET hidden = ?, date_modified = ?
         WHERE id = ?
     `);
@@ -214,24 +197,20 @@ export function patchRowVisibility(dbId: string, tableName: string, rowId: strin
 
 // PATCH Row data
 export function patchRow(dbId: string, tableName: string, rowId: string, data: Record<string, any>) {
-    const dbPath = path.join(DB_FOLDER, `${dbId}.sqlite`);
+    const { dbPath, metaPath } = getDbPaths(dbId);
     if (!fs.existsSync(dbPath)) throw new Error(`Database '${dbId}' not found`);
-
-    const metaPath = path.join(DB_FOLDER, `${dbId}.meta.json`);
     if (!fs.existsSync(metaPath)) throw new Error(`Metadata for database '${dbId}' not found`);
 
     const metadata: DatabaseMetadata = JSON.parse(fs.readFileSync(metaPath, 'utf-8'));
     const tableMeta = metadata.tables?.[tableName];
     if (!tableMeta) throw new Error(`Table '${tableName}' not found`);
 
-    // Normalize keys and exclude disallowed fields
     const normalizedData: Record<string, any> = {};
     for (const key of Object.keys(data)) {
         if (['id', 'date_modified', 'hidden'].includes(key)) continue;
         normalizedData[normalizeName(key)] = data[key];
     }
 
-    // Validate columns in normalizedData
     for (const [colName, value] of Object.entries(normalizedData)) {
         const colMeta = tableMeta.columns[colName];
         if (!colMeta) {
@@ -243,12 +222,10 @@ export function patchRow(dbId: string, tableName: string, rowId: string, data: R
         );
     }
 
-    // If title is being updated, ensure not blank
     if ('title' in normalizedData && String(normalizedData.title).trim() === '') {
         throw new Error('Title cannot be blank');
     }
 
-    // Build SET clause dynamically
     const setClauses: string[] = [];
     const values: any[] = [];
 
@@ -257,7 +234,6 @@ export function patchRow(dbId: string, tableName: string, rowId: string, data: R
         values.push(value);
     }
 
-    // Always update date_modified
     setClauses.push(`date_modified = ?`);
     values.push(Date.now());
 
@@ -269,10 +245,10 @@ export function patchRow(dbId: string, tableName: string, rowId: string, data: R
 
     const db = new Database(dbPath);
     const stmt = db.prepare(`
-    UPDATE "${tableName}"
-    SET ${setClauses.join(', ')}
-    WHERE id = ?
-  `);
+        UPDATE "${tableName}"
+        SET ${setClauses.join(', ')}
+        WHERE id = ?
+    `);
     const result = stmt.run(...values);
     db.close();
 
@@ -286,7 +262,7 @@ export function patchRow(dbId: string, tableName: string, rowId: string, data: R
 
 // DELETE a row
 export function deleteRow(dbId: string, tableName: string, rowId: string) {
-    const dbPath = path.join(DB_FOLDER, `${dbId}.sqlite`);
+    const { dbPath } = getDbPaths(dbId);
     if (!fs.existsSync(dbPath)) throw new Error(`Database '${dbId}' not found`);
 
     const db = new Database(dbPath);
