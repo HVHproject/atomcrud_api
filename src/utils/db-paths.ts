@@ -1,8 +1,8 @@
 import fs from 'fs';
 import path from 'path';
 
-export const DB_FOLDER = path.resolve('./databases');
-export const BACKUP_FOLDER = path.resolve('./backup');
+export const DB_FOLDER = process.env.ATOMCRUD_TEST_DB_FOLDER ?? path.resolve('./databases');
+export const BACKUP_FOLDER = process.env.ATOMCRUD_TEST_BACKUP_FOLDER ?? path.resolve('./backup');
 
 if (!fs.existsSync(DB_FOLDER)) {
     fs.mkdirSync(DB_FOLDER, { recursive: true });

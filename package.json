@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node dist/index.js",
     "dev": "nodemon src/index.ts",
-    "build": "tsc"
+    "build": "tsc",
+    "test": "vitest run"
   },
   "keywords": [],
   "author": "",
@@ -28,10 +29,14 @@
     "@types/express": "^5.0.3",
     "@types/multer": "^1.4.12",
     "@types/node": "^24.2.0",
+    "@types/supertest": "^7.2.0",
     "@types/turndown": "^5.0.5",
+    "@vitest/coverage-v8": "^4.1.4",
     "lucene-query-parser": "^1.2.0",
     "nodemon": "^3.1.10",
+    "supertest": "^7.2.2",
     "ts-node": "^10.9.2",
-    "typescript": "^5.9.2"
+    "typescript": "^5.9.2",
+    "vitest": "^4.1.4"
   }
 }
