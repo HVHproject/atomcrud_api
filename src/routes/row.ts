@@ -8,8 +8,8 @@ router.post('/:dbId/table/:tableName/row', (req, res) => {
     const { dbId, tableName } = req.params;
     const { title, content, ...rest } = req.body;
 
-    if (!title || !content) {
-        return res.status(400).json({ error: 'Missing required title or content' });
+    if (!title) {
+        return res.status(400).json({ error: 'Missing required title' });
     }
 
     try {
