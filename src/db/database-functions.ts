@@ -200,6 +200,16 @@ export function renameDatabase(oldId: string, newDisplayName: string): {
     return { oldId, newId };
 }
 
+// Sets the hidden flag on a database's metadata
+export function setDatabaseHidden(dbId: string, hidden: boolean): void {
+    const { metaPath } = getDbPaths(dbId);
+    if (!fs.existsSync(metaPath)) throw new Error(`Metadata for '${dbId}' not found.`);
+    const metadata: DatabaseMetadata = JSON.parse(fs.readFileSync(metaPath, 'utf-8'));
+    metadata.hidden = hidden;
+    metadata.modifiedAt = new Date().toISOString();
+    fs.writeFileSync(metaPath, JSON.stringify(metadata, null, 2), 'utf-8');
+}
+
 // Deletes the database folder and all its contents
 export function deleteDatabase(dbId: string): { success: boolean; message: string } {
     const { folderPath } = getDbPaths(dbId);

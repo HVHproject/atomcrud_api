@@ -1,5 +1,5 @@
 import express from 'express';
-import { createDatabase, deleteDatabase, getDatabaseTables, listDatabases, renameDatabase } from '../db/database-functions';
+import { createDatabase, deleteDatabase, getDatabaseTables, listDatabases, renameDatabase, setDatabaseHidden } from '../db/database-functions';
 
 const router = express.Router();
 
@@ -56,6 +56,21 @@ router.put('/:dbId', (req, res) => {
     }
 });
 
+
+// Set database hidden flag
+router.patch('/:dbId/visibility', (req, res) => {
+    const { dbId } = req.params;
+    const { hidden } = req.body;
+    if (typeof hidden !== 'boolean') {
+        return res.status(400).json({ error: '"hidden" must be a boolean' });
+    }
+    try {
+        setDatabaseHidden(dbId, hidden);
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: 'Failed to update database visibility', detail: String(err) });
+    }
+});
 
 // Delete a database
 router.delete('/:dbId', (req, res) => {
