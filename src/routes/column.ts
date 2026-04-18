@@ -6,14 +6,14 @@ const router = express.Router({ mergeParams: true });
 // POST create a new column
 router.post('/:dbId/table/:tableName/column', (req, res) => {
     const { dbId, tableName } = req.params;
-    const { name, type, hidden, index } = req.body;
+    const { name, type, hidden, index, visualization } = req.body;
 
     if (!name || !type) {
         return res.status(400).json({ error: 'Missing name or type in request body' });
     }
 
     try {
-        const newCol = createColumn(dbId, tableName, name, type, hidden ?? false, index);
+        const newCol = createColumn(dbId, tableName, name, type, hidden ?? false, index, visualization);
         res.status(201).json(newCol);
     } catch (err) {
         res.status(500).json({ error: 'Failed to create column', detail: String(err) });
