@@ -1,15 +1,14 @@
 /**
  * Rich-text import / export routes.
  *
- * Import endpoints receive a file upload and return TipTap-compatible HTML.
- * Export endpoints receive an HTML body and return the target file format.
+ * Import  → Word (.docx), RTF (.rtf), Markdown (.md)
+ * Export  → Word (.docx), Markdown (.md)
  *
- * All import routes expect multipart/form-data with a single field named "file".
- * All export routes expect Content-Type: application/json with { "html": "..." }.
+ * All import routes accept JSON: { content: string, encoding: "base64" | "utf8" }
+ * All export routes accept JSON: { html: string }
  */
 
 import express from 'express';
-import multer from 'multer';
 import {
     importMarkdown,
     importRtf,
@@ -20,44 +19,32 @@ import {
 
 const router = express.Router();
 
-// Use memory storage — we never write upload files to disk
-const upload = multer({ storage: multer.memoryStorage() });
-
 // ─────────────────────────────────────────────────────────────────────────────
 // IMPORT
 // ─────────────────────────────────────────────────────────────────────────────
 
-/**
- * POST /api/richtext/import/markdown
- * Body: multipart/form-data, field "file" (.md file)
- * Returns: { html: string }
- */
-router.post('/import/markdown', upload.single('file'), async (req, res) => {
-    if (!req.file) {
-        return res.status(400).json({ error: 'No file uploaded. Send a .md file in the "file" field.' });
+/** POST /api/richtext/import/docx — Word document */
+router.post('/import/docx', async (req, res) => {
+    const { content, encoding = 'base64' } = req.body;
+    if (!content || typeof content !== 'string') {
+        return res.status(400).json({ error: 'Missing "content" field.' });
     }
-
     try {
-        const content = req.file.buffer.toString('utf-8');
-        const html = await importMarkdown(content);
+        const buffer = Buffer.from(content, encoding as BufferEncoding);
+        const html = await importDocx(buffer);
         res.json({ html });
     } catch (err) {
-        res.status(500).json({ error: 'Failed to convert Markdown', detail: String(err) });
+        res.status(500).json({ error: 'Failed to convert DOCX', detail: String(err) });
     }
 });
 
-/**
- * POST /api/richtext/import/rtf
- * Body: multipart/form-data, field "file" (.rtf file)
- * Returns: { html: string }
- */
-router.post('/import/rtf', upload.single('file'), (req, res) => {
-    if (!req.file) {
-        return res.status(400).json({ error: 'No file uploaded. Send a .rtf file in the "file" field.' });
+/** POST /api/richtext/import/rtf — Rich Text Format */
+router.post('/import/rtf', (req, res) => {
+    const { content } = req.body;
+    if (!content || typeof content !== 'string') {
+        return res.status(400).json({ error: 'Missing "content" field.' });
     }
-
     try {
-        const content = req.file.buffer.toString('latin1'); // RTF files use latin-1 / windows-1252
         const html = importRtf(content);
         res.json({ html });
     } catch (err) {
@@ -65,24 +52,17 @@ router.post('/import/rtf', upload.single('file'), (req, res) => {
     }
 });
 
-/**
- * POST /api/richtext/import/docx
- * Body: multipart/form-data, field "file" (.docx file)
- * Returns: { html: string }
- *
- * Also handles Google Docs files — Google Docs exports to .docx format,
- * so this endpoint works for both.
- */
-router.post('/import/docx', upload.single('file'), async (req, res) => {
-    if (!req.file) {
-        return res.status(400).json({ error: 'No file uploaded. Send a .docx file in the "file" field.' });
+/** POST /api/richtext/import/markdown — Markdown */
+router.post('/import/markdown', async (req, res) => {
+    const { content } = req.body;
+    if (!content || typeof content !== 'string') {
+        return res.status(400).json({ error: 'Missing "content" field.' });
     }
-
     try {
-        const html = await importDocx(req.file.buffer);
+        const html = await importMarkdown(content);
         res.json({ html });
     } catch (err) {
-        res.status(500).json({ error: 'Failed to convert DOCX', detail: String(err) });
+        res.status(500).json({ error: 'Failed to convert Markdown', detail: String(err) });
     }
 });
 
@@ -90,17 +70,28 @@ router.post('/import/docx', upload.single('file'), async (req, res) => {
 // EXPORT
 // ─────────────────────────────────────────────────────────────────────────────
 
-/**
- * POST /api/richtext/export/markdown
- * Body: { "html": "<p>Your TipTap HTML...</p>" }
- * Returns: text/markdown file download
- */
+/** POST /api/richtext/export/docx — Word document */
+router.post('/export/docx', async (req, res) => {
+    const { html } = req.body;
+    if (!html || typeof html !== 'string') {
+        return res.status(400).json({ error: 'Missing "html" field.' });
+    }
+    try {
+        const buffer = await exportToDocx(html);
+        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+        res.setHeader('Content-Disposition', 'attachment; filename="export.docx"');
+        res.send(buffer);
+    } catch (err) {
+        res.status(500).json({ error: 'Failed to export DOCX', detail: String(err) });
+    }
+});
+
+/** POST /api/richtext/export/markdown — Markdown */
 router.post('/export/markdown', (req, res) => {
     const { html } = req.body;
     if (!html || typeof html !== 'string') {
-        return res.status(400).json({ error: 'Missing or invalid "html" field in request body.' });
+        return res.status(400).json({ error: 'Missing "html" field.' });
     }
-
     try {
         const markdown = exportToMarkdown(html);
         res.setHeader('Content-Type', 'text/markdown; charset=utf-8');
@@ -108,32 +99,6 @@ router.post('/export/markdown', (req, res) => {
         res.send(markdown);
     } catch (err) {
         res.status(500).json({ error: 'Failed to export Markdown', detail: String(err) });
-    }
-});
-
-/**
- * POST /api/richtext/export/docx
- * Body: { "html": "<p>Your TipTap HTML...</p>" }
- * Returns: application/vnd.openxmlformats-officedocument.wordprocessingml.document file download
- *
- * The resulting file is compatible with Microsoft Word and Google Docs.
- */
-router.post('/export/docx', async (req, res) => {
-    const { html } = req.body;
-    if (!html || typeof html !== 'string') {
-        return res.status(400).json({ error: 'Missing or invalid "html" field in request body.' });
-    }
-
-    try {
-        const buffer = await exportToDocx(html);
-        res.setHeader(
-            'Content-Type',
-            'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-        );
-        res.setHeader('Content-Disposition', 'attachment; filename="export.docx"');
-        res.send(buffer);
-    } catch (err) {
-        res.status(500).json({ error: 'Failed to export DOCX', detail: String(err) });
     }
 });
 

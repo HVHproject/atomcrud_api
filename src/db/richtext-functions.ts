@@ -22,6 +22,8 @@
 import { marked } from 'marked';
 import mammoth from 'mammoth';
 import TurndownService from 'turndown';
+// @ts-ignore — no published @types for this package
+import { gfm } from 'turndown-plugin-gfm';
 import {
     Document,
     Paragraph,
@@ -185,6 +187,9 @@ export function exportToMarkdown(htmlContent: string): string {
         bulletListMarker: '-',
         codeBlockStyle: 'fenced',
     });
+
+    // GFM plugin adds proper pipe-table support
+    td.use(gfm);
 
     // TipTap uses <mark> for highlights — map to ==text== (common MD extension)
     td.addRule('highlight', {
