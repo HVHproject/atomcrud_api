@@ -12,7 +12,7 @@ A local Express/SQLite REST API that powers the AtomCRUD Electron app.
 | Language     | TypeScript 5.x                   |
 | Framework    | Express 5.x                      |
 | Database     | SQLite via `better-sqlite3`       |
-| File upload  | `multer` (memory storage)         |
+| File upload  | `multer` (memory + disk storage)  |
 | Rich text    | `marked`, `mammoth`, `turndown`, `docx` |
 | Port         | 4000 (default)                   |
 
@@ -42,13 +42,13 @@ databases/
   {safeName}_{timestamp}/          ← database folder (also the db ID)
     {safeName}.sqlite               ← SQLite database file
     {safeName}.meta.json            ← metadata (types, hidden flags, tags, rules)
-    Gallery/                        ← reserved for media assets (future use)
+    Gallery/                        ← per-row media files (upload supported)
 
 backup/
-  backup_{safeName}_{timestamp}/            ← backup folder (mirrors database structure)
+  backup_{safeName}_{timestamp}/   ← backup folder (mirrors database structure)
     {safeName}.sqlite
     {safeName}.meta.json
-    Gallery/                                ← copied from source if present
+    Gallery/                       ← copied from source if present
 ```
 
 The `id` of a database is always the folder name (`{safeName}_{timestamp}`).  
@@ -60,14 +60,14 @@ The `safeName` is derived by lowercasing the display name and replacing non-alph
 
 Every table has six protected columns that cannot be deleted, renamed, or retyped:
 
-| Column         | Type    | Notes                            |
-|----------------|---------|----------------------------------|
-| `id`           | integer | PRIMARY KEY AUTOINCREMENT        |
-| `title`        | string  | Required on insert               |
-| `content`      | rich_text | Optional body                  |
-| `date_created` | date    | Unix timestamp (ms), auto-set    |
-| `date_modified`| date    | Unix timestamp (ms), auto-updated|
-| `hidden`       | boolean | Soft-delete flag (0 / 1)         |
+| Column         | Type      | Notes                            |
+|----------------|-----------|----------------------------------|
+| `id`           | integer   | PRIMARY KEY AUTOINCREMENT        |
+| `title`        | string    | Required on insert               |
+| `content`      | rich_text | Optional body                    |
+| `date_created` | date      | Unix timestamp (ms), auto-set    |
+| `date_modified`| date      | Unix timestamp (ms), auto-updated|
+| `hidden`       | boolean   | Soft-delete flag (0 / 1)         |
 
 ---
 
@@ -164,6 +164,12 @@ GET /api/database/:dbId
 ```http
 PUT /api/database/:dbId
 { "newName": "renamed_database" }
+```
+
+#### Set Database Visibility
+```http
+PATCH /api/database/:dbId/visibility
+{ "hidden": true }
 ```
 
 #### Delete a Database
@@ -290,26 +296,6 @@ POST /api/database/:dbId/table/:tableName/column/:columnName/copy
 Copies both the column definition (metadata) and all row data.
 Values are coerced when source and target types differ.
 
-#### Delete a Column
-```http
-DELETE /api/database/:dbId/table/:tableName/column/:columnName
-```
-
-#### Set Visualization Hint
-```http
-PATCH /api/database/:dbId/table/:tableName/column/:columnName/visualization
-{ "visualization": "progress" }
-```
-Free-form string the front end uses to decide how to render the column.
-Examples: `"progress"`, `"stars"`, `"pill"`, `"color"`, `"avatar"`, `"bar"`, `""` (default).
-
-#### Set tagLock Manually (tag columns only)
-```http
-PATCH /api/database/:dbId/table/:tableName/column/:columnName/taglock
-{ "locked": true }
-```
-Cannot be used while the column is linked to a GlobalTagList — unlink first.
-
 #### Link Column to a GlobalTagList (tag columns only)
 ```http
 POST /api/database/:dbId/table/:tableName/column/:columnName/link
@@ -323,6 +309,26 @@ read-only until unlinked.
 POST /api/database/:dbId/table/:tableName/column/:columnName/unlink
 ```
 Clears `linkedList`, resets `tagLock = false`. Tags remain as the last-synced values.
+
+#### Set tagLock Manually (tag columns only)
+```http
+PATCH /api/database/:dbId/table/:tableName/column/:columnName/taglock
+{ "locked": true }
+```
+Cannot be used while the column is linked to a GlobalTagList — unlink first.
+
+#### Set Visualization Hint
+```http
+PATCH /api/database/:dbId/table/:tableName/column/:columnName/visualization
+{ "visualization": "progress" }
+```
+Free-form string the front end uses to decide how to render the column.
+Examples: `"progress"`, `"stars"`, `"pill"`, `"color"`, `"avatar"`, `"bar"`, `""` (default).
+
+#### Delete a Column
+```http
+DELETE /api/database/:dbId/table/:tableName/column/:columnName
+```
 
 ---
 
@@ -504,27 +510,48 @@ Returns a `.docx` file download compatible with Microsoft Word and Google Docs.
 
 ---
 
-### Backup / Recovery Endpoints
+### Gallery Endpoints  `/api/database/:dbId/table/:tableName/row/:rowId/upload`
+
+#### Upload Files
+```http
+POST /api/database/:dbId/table/:tableName/row/:rowId/upload
+Content-Type: multipart/form-data
+field "files": one or more files
+```
+
+#### List Uploaded Files
+```http
+GET /api/database/:dbId/table/:tableName/row/:rowId/upload
+```
+
+#### Delete an Uploaded File
+```http
+DELETE /api/database/:dbId/table/:tableName/row/:rowId/upload/:filename
+```
+
+---
+
+### Backup / Recovery Endpoints  `/api/database`
 
 #### Create a Backup
 ```http
-POST /api/backup/:dbId
+POST /api/database/backup/:dbId
 ```
 
 #### List All Backups
 ```http
-GET /api/backups/retrieve
+GET /api/database/backups/retrieve
 ```
 
 #### Recover a Backup
 ```http
-POST /api/recover/:backupName
+POST /api/database/recover/:backupName
 ```
 Restores the backup as a new database: `restored_{safeName}_{timestamp}`.
 
 #### Delete a Backup
 ```http
-DELETE /api/backup/:backupName
+DELETE /api/database/backup/:backupName
 ```
 
 ---
@@ -535,16 +562,16 @@ The `GET /table/:tableName` endpoint supports Lucene-style search and sorting.
 
 ### Query (`q=`)
 
-| Syntax              | Meaning                                          |
-|---------------------|--------------------------------------------------|
-| `test`              | `title` contains "test"                          |
-| `title:test`        | column `title` contains "test"                   |
-| `i2:test`           | column at index 2 contains "test"                |
-| `alpha and beta`    | both terms in title                              |
-| `alpha or beta`     | either term                                      |
-| `!gamma`            | title does NOT contain "gamma"                   |
-| `(a or b) and !c`   | grouping with parentheses                        |
-| `title:"exact phrase"` | exact phrase search                          |
+| Syntax                 | Meaning                                          |
+|------------------------|--------------------------------------------------|
+| `test`                 | `title` contains "test"                          |
+| `title:test`           | column `title` contains "test"                   |
+| `i2:test`              | column at index 2 contains "test"                |
+| `alpha and beta`       | both terms in title                              |
+| `alpha or beta`        | either term                                      |
+| `!gamma`               | title does NOT contain "gamma"                   |
+| `(a or b) and !c`      | grouping with parentheses                        |
+| `title:"exact phrase"` | exact phrase search                              |
 
 ### Sort (`s=`)
 
@@ -552,7 +579,7 @@ The `GET /table/:tableName` endpoint supports Lucene-style search and sorting.
 |----------------|--------------------------|
 | `s=title:asc`  | alphabetical ascending   |
 | `s=i2:desc`    | column index 2 descending|
-| `s=rand`        | random order             |
+| `s=rand`       | random order             |
 
 ### Pagination
 
