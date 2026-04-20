@@ -294,6 +294,9 @@ export function swapColumnIndex(dbId: string, tableName: string, colName: string
         throw new Error(`No column found with order ${targetIndex}`);
 
     const [targetColumnName] = targetEntry;
+    if (untouchable.includes(targetColumnName))
+        throw new Error(`Column '${targetColumnName}' is protected and cannot be swapped.`);
+
     columns[columnName].index = targetIndex;
     columns[targetColumnName].index = sourceIndex;
 
@@ -321,6 +324,18 @@ export function moveColumnIndex(dbId: string, tableName: string, colName: string
         throw new Error(`Invalid index for column '${columnName}'`);
 
     if (oldIndex === newIndex) return;
+
+    // Reject if any untouchable column falls within the shift range
+    const wouldDisplace = Object.entries(columns).some(([name, colDef]) => {
+        if (!untouchable.includes(name)) return false;
+        const idx = colDef.index;
+        if (typeof idx !== 'number') return false;
+        return oldIndex < newIndex
+            ? idx > oldIndex && idx <= newIndex
+            : idx >= newIndex && idx < oldIndex;
+    });
+    if (wouldDisplace)
+        throw new Error(`Cannot move to index ${newIndex}: the range crosses a protected column.`);
 
     for (const [, colDef] of Object.entries(columns)) {
         if (typeof colDef.index !== 'number' || colDef.index < 0) continue;
