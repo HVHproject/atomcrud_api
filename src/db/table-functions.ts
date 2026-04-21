@@ -163,18 +163,26 @@ export function getTable(
     const columnInfo = db.prepare(`PRAGMA table_info(${tableName})`).all() as Column[];
     const columns: ColumnDef[] = columnInfo.map((col) => {
         const metaCol = metadata.tables?.[tableName]?.columns?.[col.name];
-        return {
+        const isObj = typeof metaCol === 'object' && metaCol !== null;
+        const colType: ColumnType = isObj
+            ? metaCol.type
+            : (typeof metaCol === 'string' ? metaCol as ColumnType : 'string');
+        const result: ColumnDef = {
             name: col.name,
-            type: typeof metaCol === 'object'
-                ? metaCol.type
-                : (typeof metaCol === 'string'
-                    ? metaCol as ColumnType
-                    : 'string'),
-            hidden: typeof metaCol === 'object' ? metaCol.hidden ?? false : false,
-            index: typeof metaCol === 'object' && typeof metaCol.index === 'number'
-                ? metaCol.index
-                : -1,
+            type: colType,
+            hidden: isObj ? metaCol.hidden ?? false : false,
+            index: isObj && typeof metaCol.index === 'number' ? metaCol.index : -1,
+            visualization: isObj ? metaCol.visualization ?? '' : '',
         };
+        if (colType === 'single_tag' || colType === 'multi_tag') {
+            result.tags = isObj && Array.isArray(metaCol.tags) ? metaCol.tags : [];
+            result.tagLock = isObj ? metaCol.tagLock ?? false : false;
+            result.linkedList = isObj ? metaCol.linkedList ?? '' : '';
+        }
+        if (colType === 'custom' && isObj && metaCol.rule !== undefined) {
+            result.rule = metaCol.rule;
+        }
+        return result;
     });
 
     let filters: string[] = [];
