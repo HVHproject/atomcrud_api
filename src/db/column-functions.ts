@@ -44,6 +44,7 @@ export function createColumn(
     const currentColumnCount = Object.keys(columns).length;
     const assignedIndex = typeof index === 'number' ? index : currentColumnCount;
     const isTagType = customType === 'multi_tag' || customType === 'single_tag';
+    const isRefType = customType === 'table_ref' || customType === 'table_ref_many';
 
     columns[columnName] = {
         type: customType as ColumnType,
@@ -52,6 +53,7 @@ export function createColumn(
         visualization: visualization ?? '',
         ...(isTagType ? { tags: [] as TagDef[], tagLock: false, linkedList: '' } : {}),
         ...(customType === 'custom' ? { rule: '' } : {}),
+        ...(isRefType ? { linkedTable: '' } : {}),
     };
 
     metadata.modifiedAt = new Date().toISOString();
@@ -64,6 +66,7 @@ export function createColumn(
         index: assignedIndex,
         visualization: visualization ?? '',
         ...(isTagType ? { tags: [], tagLock: false, linkedList: '' } : {}),
+        ...(isRefType ? { linkedTable: '' } : {}),
     };
 }
 
@@ -91,6 +94,9 @@ export function getAllColumns(dbId: string, tableName: string): ColumnDef[] {
         }
         if (colDef.rule !== undefined) {
             baseDef.rule = colDef.rule;
+        }
+        if (colDef.type === 'table_ref' || colDef.type === 'table_ref_many') {
+            baseDef.linkedTable = colDef.linkedTable ?? '';
         }
         return baseDef;
     });
@@ -120,6 +126,9 @@ export function getSingleColumn(dbId: string, tableName: string, columnName: str
     }
     if (colDef.rule !== undefined) {
         result.rule = colDef.rule;
+    }
+    if (colDef.type === 'table_ref' || colDef.type === 'table_ref_many') {
+        result.linkedTable = colDef.linkedTable ?? '';
     }
     return result;
 }
@@ -164,6 +173,7 @@ export function updateColumnNameOrType(
         db.prepare(`ALTER TABLE ${tableName} ADD COLUMN ${finalName} ${realSqlType}`).run();
 
         const isTagType = newType === 'multi_tag' || newType === 'single_tag';
+        const isRefType = newType === 'table_ref' || newType === 'table_ref_many';
         columns[finalName] = {
             type: newType as ColumnType,
             hidden: currentDef.hidden ?? false,
@@ -171,6 +181,7 @@ export function updateColumnNameOrType(
             visualization: currentDef.visualization ?? '',
             ...(isTagType ? { tags: [] as TagDef[], tagLock: false, linkedList: '' } : {}),
             ...(newType === 'custom' ? { rule: currentDef.rule ?? '' } : {}),
+            ...(isRefType ? { linkedTable: '' } : {}),
         };
     }
 

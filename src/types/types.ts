@@ -10,7 +10,9 @@ export type ColumnType =
     | 'single_tag'      // single-select list
     | 'rich_text'       // HTML string (TipTap)
     | 'link'            // display name + url object
-    | 'custom';         // validated by regex in metadata
+    | 'custom'          // validated by regex in metadata
+    | 'table_ref'       // foreign key to one row in another table (stored as INTEGER row id)
+    | 'table_ref_many'; // foreign keys to multiple rows in another table (stored as JSON array of ints)
 
 export interface ColumnDef {
     name: string;
@@ -22,6 +24,7 @@ export interface ColumnDef {
     visualization?: string; // front-end display hint (e.g. "progress", "color", "stars")
     tagLock?: boolean;     // for single_tag / multi_tag: prevents adding/removing tags when true
     linkedList?: string;   // for single_tag / multi_tag: ID of a GlobalTagList this column is bound to
+    linkedTable?: string;  // for table_ref / table_ref_many: target table name within this database
 }
 
 export interface Column {
@@ -94,6 +97,7 @@ export interface DatabaseMetadata {
                     visualization?: string;
                     tagLock?: boolean;
                     linkedList?: string;
+                    linkedTable?: string;
                 };
             };
         };

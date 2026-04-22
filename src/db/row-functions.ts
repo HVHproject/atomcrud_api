@@ -5,6 +5,7 @@ import type { DatabaseMetadata, ColumnDef } from '../types';
 import { normalizeName } from '../utils/normalize-name';
 import { processTagValue } from '../utils/process-tag-value';
 import { getDbPaths } from '../utils/db-paths';
+import { cascadeNullOnRowDelete } from './tableref-functions';
 
 function validateColumnValue(colMeta: ColumnDef, value: any): any {
     const { type } = colMeta;
@@ -87,6 +88,30 @@ function validateColumnValue(colMeta: ColumnDef, value: any): any {
             }
             return value;
 
+        case 'table_ref':
+            if (value === null || value === undefined) return null;
+            if (!Number.isInteger(value) || value <= 0)
+                throw new Error(`Value for table_ref column must be a positive integer row ID, got: ${value}`);
+            return value;
+
+        case 'table_ref_many': {
+            if (value === null || value === undefined) return null;
+            let ids: number[];
+            if (typeof value === 'string') {
+                try { ids = JSON.parse(value); } catch {
+                    throw new Error(`Value for table_ref_many column must be a JSON array of integers, got: ${value}`);
+                }
+            } else if (Array.isArray(value)) {
+                ids = value;
+            } else {
+                throw new Error(`Value for table_ref_many column must be an array or JSON string, got: ${typeof value}`);
+            }
+            if (!Array.isArray(ids) || !ids.every(id => Number.isInteger(id) && id > 0))
+                throw new Error(`table_ref_many: all IDs must be positive integers`);
+            const unique = [...new Set(ids)].sort((a, b) => a - b);
+            return unique.length > 0 ? JSON.stringify(unique) : null;
+        }
+
         default:
             throw new Error(`Unknown column type: ${type}`);
     }
@@ -136,6 +161,32 @@ export function createRow(dbId: string, tableName: string, data: Record<string, 
     }
 
     const db = new Database(dbPath);
+
+    // Verify table_ref IDs actually exist in their linked tables
+    for (const [colName, colMeta] of Object.entries(tableMeta.columns)) {
+        if (colMeta.type !== 'table_ref' && colMeta.type !== 'table_ref_many') continue;
+        if (!(colName in rowData) || rowData[colName] === null || rowData[colName] === undefined) continue;
+        const linkedTable = colMeta.linkedTable;
+        if (!linkedTable) continue;
+
+        if (colMeta.type === 'table_ref') {
+            const exists = db.prepare(`SELECT 1 FROM "${linkedTable}" WHERE id = ?`).get(rowData[colName]);
+            if (!exists) {
+                db.close();
+                throw new Error(`Row ID ${rowData[colName]} does not exist in table '${linkedTable}'`);
+            }
+        } else {
+            const ids: number[] = JSON.parse(rowData[colName]);
+            for (const id of ids) {
+                const exists = db.prepare(`SELECT 1 FROM "${linkedTable}" WHERE id = ?`).get(id);
+                if (!exists) {
+                    db.close();
+                    throw new Error(`Row ID ${id} does not exist in table '${linkedTable}'`);
+                }
+            }
+        }
+    }
+
     const colNames = Object.keys(rowData).filter(k => rowData[k] !== undefined);
     const placeholders = colNames.map(() => '?').join(', ');
     const stmt = db.prepare(
@@ -226,6 +277,30 @@ export function patchRow(dbId: string, tableName: string, rowId: string, data: R
         throw new Error('Title cannot be blank');
     }
 
+    // Verify table_ref IDs actually exist in their linked tables
+    const patchDb = new Database(dbPath);
+    try {
+        for (const [colName, colMeta] of Object.entries(tableMeta.columns)) {
+            if (colMeta.type !== 'table_ref' && colMeta.type !== 'table_ref_many') continue;
+            if (!(colName in normalizedData) || normalizedData[colName] === null || normalizedData[colName] === undefined) continue;
+            const linkedTable = colMeta.linkedTable;
+            if (!linkedTable) continue;
+
+            if (colMeta.type === 'table_ref') {
+                const exists = patchDb.prepare(`SELECT 1 FROM "${linkedTable}" WHERE id = ?`).get(normalizedData[colName]);
+                if (!exists) throw new Error(`Row ID ${normalizedData[colName]} does not exist in table '${linkedTable}'`);
+            } else {
+                const ids: number[] = JSON.parse(normalizedData[colName]);
+                for (const id of ids) {
+                    const exists = patchDb.prepare(`SELECT 1 FROM "${linkedTable}" WHERE id = ?`).get(id);
+                    if (!exists) throw new Error(`Row ID ${id} does not exist in table '${linkedTable}'`);
+                }
+            }
+        }
+    } finally {
+        patchDb.close();
+    }
+
     const setClauses: string[] = [];
     const values: any[] = [];
 
@@ -271,4 +346,7 @@ export function deleteRow(dbId: string, tableName: string, rowId: string) {
     db.close();
 
     if (result.changes === 0) throw new Error(`Row with ID '${rowId}' not found`);
+
+    // Null out any table_ref/table_ref_many columns across this DB that pointed to this row
+    cascadeNullOnRowDelete(dbId, tableName, Number(rowId));
 }

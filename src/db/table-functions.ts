@@ -6,6 +6,7 @@ import { columnTypeMap } from '../utils/type-mapping';
 import { parseSearchQuery, resolveFieldName } from '../utils/search';
 import { normalizeName } from '../utils/normalize-name';
 import { getDbPaths } from '../utils/db-paths';
+import { cascadeOnTableDelete, cascadeOnTableRename } from './tableref-functions';
 
 // Create new table attached to database
 export function createTable(dbId: string, rawTableName: string): void {
@@ -182,6 +183,9 @@ export function getTable(
         if (colType === 'custom' && isObj && metaCol.rule !== undefined) {
             result.rule = metaCol.rule;
         }
+        if ((colType === 'table_ref' || colType === 'table_ref_many') && isObj) {
+            result.linkedTable = metaCol.linkedTable ?? '';
+        }
         return result;
     });
 
@@ -280,6 +284,9 @@ export function renameTable(dbId: string, oldName: string, newRawName: string): 
     delete metadata.tables[oldName];
     metadata.modifiedAt = new Date().toISOString();
     fs.writeFileSync(metaPath, JSON.stringify(metadata, null, 2));
+
+    // Update linkedTable on any table_ref columns that pointed to the old name
+    cascadeOnTableRename(dbId, oldName, newName);
 }
 
 // Hides/Unhides table
@@ -303,6 +310,10 @@ export function deleteTable(dbId: string, tableName: string): void {
 
     if (!fs.existsSync(dbPath)) throw new Error(`Database '${dbId}' not found.`);
     if (!fs.existsSync(metaPath)) throw new Error(`Metadata for '${dbId}' not found.`);
+
+    // Null out & clear linkedTable on any table_ref columns pointing to this table
+    // Must run before the table is dropped so the UPDATE statements still work
+    cascadeOnTableDelete(dbId, tableName);
 
     const db = new Database(dbPath);
     db.exec(`DROP TABLE IF EXISTS ${tableName};`);

@@ -1,5 +1,6 @@
 import express from 'express';
 import { createColumn, deleteColumn, getAllColumns, getSingleColumn, moveColumnIndex, registerTag, swapColumnIndex, unregisterTag, updateColumnNameOrType, updateColumnRule, updateColumnVisibility } from '../db/column-functions';
+import { setTableRefTarget } from '../db/tableref-functions';
 
 const router = express.Router({ mergeParams: true });
 
@@ -151,6 +152,23 @@ router.patch('/:dbId/table/:tableName/column/:columnName/rule', (req, res) => {
 
     try {
         updateColumnRule(dbId, tableName, columnName, rule);
+        res.json({ success: true });
+    } catch (err) {
+        res.status(400).json({ error: (err as Error).message });
+    }
+});
+
+// PATCH set target table for a table_ref / table_ref_many column
+router.patch('/:dbId/table/:tableName/column/:columnName/tableref', (req, res) => {
+    const { dbId, tableName, columnName } = req.params;
+    const { targetTable } = req.body;
+
+    if (typeof targetTable !== 'string') {
+        return res.status(400).json({ error: 'targetTable must be a string' });
+    }
+
+    try {
+        setTableRefTarget(dbId, tableName, columnName, targetTable);
         res.json({ success: true });
     } catch (err) {
         res.status(400).json({ error: (err as Error).message });
