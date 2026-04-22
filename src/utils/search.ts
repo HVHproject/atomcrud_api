@@ -1,6 +1,10 @@
 import lucene from 'lucene-query-parser';
 import { ColumnDef } from '../types/types';
 
+// Pre-built lookup for table_ref display-value resolution
+// colName → array of { id, display } from the linked table
+export type RefLookup = Map<string, Array<{ id: number; display: string }>>;
+
 // Treat these column types as numeric for comparisons
 const numericTypes = new Set<ColumnDef['type']>([
     'integer',
@@ -118,11 +122,11 @@ function buildComparisonForNumeric(
     return null;
 }
 
-function buildWhereFromNode(node: any, params: any[], columns: ColumnDef[]): string {
+function buildWhereFromNode(node: any, params: any[], columns: ColumnDef[], refLookup: RefLookup = new Map()): string {
     if (!node) return '1';
 
     if (node.left && !node.right && !node.operator && node.field == null && node.term == null) {
-        return buildWhereFromNode(node.left, params, columns);
+        return buildWhereFromNode(node.left, params, columns, refLookup);
     }
 
     let negate = false;
@@ -136,8 +140,8 @@ function buildWhereFromNode(node: any, params: any[], columns: ColumnDef[]): str
     }
 
     if (node.left && node.right && node.operator) {
-        const leftSQL = buildWhereFromNode(node.left, params, columns);
-        const rightSQL = buildWhereFromNode(node.right, params, columns);
+        const leftSQL = buildWhereFromNode(node.left, params, columns, refLookup);
+        const rightSQL = buildWhereFromNode(node.right, params, columns, refLookup);
 
         if (String(node.operator).toLowerCase() === '<implicit>') {
             return `(${leftSQL} AND ${rightSQL})`;
@@ -161,6 +165,56 @@ function buildWhereFromNode(node: any, params: any[], columns: ColumnDef[]): str
             return negate
                 ? `(NOT ${colName} REGEXP ?)`
                 : `${colName} REGEXP ?`;
+        }
+
+        if (colType === 'table_ref' || colType === 'table_ref_many') {
+            // Numeric term → treat as raw ID
+            const asInt = parseInt(termStr, 10);
+            const isPureInt = !isNaN(asInt) && String(asInt) === termStr.trim();
+
+            if (isPureInt) {
+                if (colType === 'table_ref') {
+                    params.push(asInt);
+                    const sql = `${colName} = ?`;
+                    return negate ? `(NOT ${sql})` : sql;
+                } else {
+                    // Match ID inside JSON array [1,3,7] — look for boundary-delimited integer
+                    const pat = `(^\\[|,)${asInt}(,|\\]$)`;
+                    params.push(pat);
+                    const sql = `${colName} REGEXP ?`;
+                    return negate ? `(NOT ${sql})` : sql;
+                }
+            }
+
+            // Text term → resolve against pre-built display lookup
+            const entries = refLookup.get(colName);
+            if (!entries || entries.length === 0) {
+                // No display column configured — no text matches possible
+                return negate ? '1=1' : '1=0';
+            }
+
+            const lowerTerm = termStr.toLowerCase();
+            const matchingIds = entries
+                .filter(({ display }) => display.toLowerCase().includes(lowerTerm))
+                .map(({ id }) => id);
+
+            if (matchingIds.length === 0) {
+                return negate ? '1=1' : '1=0';
+            }
+
+            if (colType === 'table_ref') {
+                const placeholders = matchingIds.map(() => '?').join(', ');
+                params.push(...matchingIds);
+                const sql = `${colName} IN (${placeholders})`;
+                return negate ? `(NOT ${sql})` : sql;
+            } else {
+                // Sort longer IDs first to avoid prefix collisions in alternation
+                const sorted = [...matchingIds].sort((a, b) => String(b).length - String(a).length);
+                const pat = `(^\\[|,)(${sorted.join('|')})(,|\\]$)`;
+                params.push(pat);
+                const sql = `${colName} REGEXP ?`;
+                return negate ? `(NOT ${sql})` : sql;
+            }
         }
 
         if (numericTypes.has(colType) || (colType === 'custom' && wantsNumeric)) {
@@ -202,7 +256,7 @@ function buildWhereFromNode(node: any, params: any[], columns: ColumnDef[]): str
 
     if (Array.isArray(node)) {
         const subClauses = node
-            .map((n) => buildWhereFromNode(n, params, columns))
+            .map((n) => buildWhereFromNode(n, params, columns, refLookup))
             .filter((clause) => clause && clause !== '1');
         if (subClauses.length === 0) return '1';
         return `(${subClauses.join(' AND ')})`;
@@ -211,7 +265,7 @@ function buildWhereFromNode(node: any, params: any[], columns: ColumnDef[]): str
     return '1';
 }
 
-export function parseSearchQuery(queryString: string, columns: ColumnDef[]) {
+export function parseSearchQuery(queryString: string, columns: ColumnDef[], refLookup: RefLookup = new Map()) {
     if (!queryString || !queryString.trim()) {
         return { where: '1', params: [] };
     }
@@ -259,7 +313,7 @@ export function parseSearchQuery(queryString: string, columns: ColumnDef[]) {
     }
 
     const params: any[] = [];
-    const where = buildWhereFromNode(parsed, params, columns);
+    const where = buildWhereFromNode(parsed, params, columns, refLookup);
 
     return { where, params };
 }

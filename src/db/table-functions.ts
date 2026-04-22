@@ -3,7 +3,7 @@ import path from 'path';
 import Database from 'better-sqlite3';
 import type { ColumnDef, DatabaseMetadata, Column, ColumnType } from '../types';
 import { columnTypeMap } from '../utils/type-mapping';
-import { parseSearchQuery, resolveFieldName } from '../utils/search';
+import { parseSearchQuery, resolveFieldName, RefLookup } from '../utils/search';
 import { normalizeName } from '../utils/normalize-name';
 import { getDbPaths } from '../utils/db-paths';
 import { cascadeOnTableDelete, cascadeOnTableRename } from './tableref-functions';
@@ -198,7 +198,26 @@ export function getTable(
     }
 
     if (options?.search) {
-        const searchResult = parseSearchQuery(options.search, columns);
+        // Build display-value lookup for any table_ref/table_ref_many columns
+        // that have a display column configured (stored in visualization).
+        const refLookup: RefLookup = new Map();
+        for (const col of columns) {
+            if ((col.type === 'table_ref' || col.type === 'table_ref_many')
+                && col.linkedTable && col.visualization) {
+                try {
+                    const rows = db.prepare(
+                        `SELECT id, "${col.visualization}" AS display FROM "${col.linkedTable}"`
+                    ).all() as Array<{ id: number; display: any }>;
+                    refLookup.set(col.name, rows.map(r => ({
+                        id: r.id,
+                        display: r.display != null ? String(r.display) : '',
+                    })));
+                } catch {
+                    // Linked table missing or display column gone — skip silently
+                }
+            }
+        }
+        const searchResult = parseSearchQuery(options.search, columns, refLookup);
         filters.push(searchResult.where);
         params.push(...searchResult.params);
     }
