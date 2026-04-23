@@ -190,7 +190,6 @@ describe('Column endpoints', () => {
 
         expect(res.status).toBe(201);
         expect(res.body).toHaveProperty('tagLock', false);
-        expect(res.body).toHaveProperty('linkedList', '');
     });
 
     it('POST .../column — 400 on missing name', async () => {
@@ -598,99 +597,7 @@ describe('Transfer endpoints', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 6. GlobalTagList endpoints
-// ─────────────────────────────────────────────────────────────────────────────
-let tagListId = '';
-
-describe('GlobalTagList endpoints', () => {
-    it('POST .../taglist/sync — creates a GlobalTagList from single_tag column', async () => {
-        const res = await request(app)
-            .post(`/api/database/${dbId}/taglist/sync`)
-            .send({ tableName: 'items', columnName: 'status', name: 'Item Statuses' });
-
-        expect(res.status).toBe(200);
-        expect(res.body).toHaveProperty('list');
-        expect(res.body.list).toHaveProperty('id');
-        tagListId = res.body.list.id;
-    });
-
-    it('POST .../taglist/sync — 400 on missing tableName', async () => {
-        const res = await request(app)
-            .post(`/api/database/${dbId}/taglist/sync`)
-            .send({ columnName: 'status' });
-
-        expect(res.status).toBe(400);
-    });
-
-    it('GET .../taglist — lists all GlobalTagLists', async () => {
-        const res = await request(app).get(`/api/database/${dbId}/taglist`);
-        expect(res.status).toBe(200);
-        expect(Array.isArray(res.body.lists)).toBe(true);
-        expect(res.body.lists.some((l: any) => l.id === tagListId)).toBe(true);
-    });
-
-    it('GET .../taglist/:listId — returns a single list', async () => {
-        const res = await request(app).get(`/api/database/${dbId}/taglist/${tagListId}`);
-        expect(res.status).toBe(200);
-        expect(res.body.list).toHaveProperty('id', tagListId);
-        expect(res.body.list).toHaveProperty('name', 'Item Statuses');
-    });
-
-    it('GET .../taglist/:listId — 404 on unknown id', async () => {
-        const res = await request(app).get(`/api/database/${dbId}/taglist/nonexistent`);
-        expect(res.status).toBe(404);
-    });
-
-    it('POST .../column/:col/link — links column to GlobalTagList', async () => {
-        // First add a multi_tag column in items_target to link
-        await request(app)
-            .post(`/api/database/${dbId}/table/items_target/column`)
-            .send({ name: 'category', type: 'multi_tag' });
-
-        const res = await request(app)
-            .post(`/api/database/${dbId}/table/items_target/column/category/link`)
-            .send({ listId: tagListId });
-
-        expect(res.status).toBe(200);
-        expect(res.body.success).toBe(true);
-    });
-
-    it('POST .../column/:col/link — 400 on missing listId', async () => {
-        const res = await request(app)
-            .post(`/api/database/${dbId}/table/items_target/column/category/link`)
-            .send({});
-
-        expect(res.status).toBe(400);
-    });
-
-    it('PATCH .../taglock — 500 when column is linked (cannot manually change lock)', async () => {
-        const res = await request(app)
-            .patch(`/api/database/${dbId}/table/items_target/column/category/taglock`)
-            .send({ locked: false });
-
-        // Should throw because column has linkedList set
-        expect(res.status).toBe(500);
-    });
-
-    it('POST .../column/:col/unlink — unlinks column from GlobalTagList', async () => {
-        const res = await request(app)
-            .post(`/api/database/${dbId}/table/items_target/column/category/unlink`);
-
-        expect(res.status).toBe(200);
-        expect(res.body.success).toBe(true);
-    });
-
-    it('DELETE .../taglist/:listId — deletes a GlobalTagList', async () => {
-        const res = await request(app)
-            .delete(`/api/database/${dbId}/taglist/${tagListId}`);
-
-        expect(res.status).toBe(200);
-        expect(res.body.success).toBe(true);
-    });
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
-// 7. Rich text import / export
+// 6. Rich text import / export
 // ─────────────────────────────────────────────────────────────────────────────
 describe('Rich text endpoints', () => {
     it('POST /api/richtext/import/markdown — converts markdown to HTML', async () => {

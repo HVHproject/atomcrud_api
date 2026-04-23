@@ -1,5 +1,5 @@
 import express from 'express';
-import { createColumn, deleteColumn, getAllColumns, getSingleColumn, moveColumnIndex, registerTag, swapColumnIndex, unregisterTag, updateColumnNameOrType, updateColumnRule, updateColumnVisibility } from '../db/column-functions';
+import { createColumn, deleteColumn, getAllColumns, getSingleColumn, moveColumnIndex, registerTag, swapColumnIndex, unregisterTag, updateColumnNameOrType, updateColumnRule, updateColumnVisibility, updateColumnVisualization, updateTagLock } from '../db/column-functions';
 import { setTableRefTarget } from '../db/tableref-functions';
 
 const router = express.Router({ mergeParams: true });
@@ -170,6 +170,36 @@ router.patch('/:dbId/table/:tableName/column/:columnName/tableref', (req, res) =
     try {
         setTableRefTarget(dbId, tableName, columnName, targetTable);
         res.json({ success: true });
+    } catch (err) {
+        res.status(400).json({ error: (err as Error).message });
+    }
+});
+
+// PATCH set tagLock on a single_tag / multi_tag column
+router.patch('/:dbId/table/:tableName/column/:columnName/taglock', (req, res) => {
+    const { dbId, tableName, columnName } = req.params;
+    const { locked } = req.body;
+    if (typeof locked !== 'boolean') {
+        return res.status(400).json({ error: '"locked" must be a boolean' });
+    }
+    try {
+        updateTagLock(dbId, tableName, columnName, locked);
+        res.json({ success: true });
+    } catch (err) {
+        res.status(400).json({ error: (err as Error).message });
+    }
+});
+
+// PATCH set visualization hint on any column
+router.patch('/:dbId/table/:tableName/column/:columnName/visualization', (req, res) => {
+    const { dbId, tableName, columnName } = req.params;
+    const { visualization } = req.body;
+    if (typeof visualization !== 'string') {
+        return res.status(400).json({ error: '"visualization" must be a string' });
+    }
+    try {
+        const updated = updateColumnVisualization(dbId, tableName, columnName, visualization);
+        res.json({ column: updated });
     } catch (err) {
         res.status(400).json({ error: (err as Error).message });
     }

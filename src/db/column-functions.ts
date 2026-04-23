@@ -51,7 +51,7 @@ export function createColumn(
         hidden,
         index: assignedIndex,
         visualization: visualization ?? '',
-        ...(isTagType ? { tags: [] as TagDef[], tagLock: false, linkedList: '' } : {}),
+        ...(isTagType ? { tags: [] as TagDef[], tagLock: false } : {}),
         ...(customType === 'custom' ? { rule: '' } : {}),
         ...(isRefType ? { linkedTable: '' } : {}),
     };
@@ -65,7 +65,7 @@ export function createColumn(
         hidden,
         index: assignedIndex,
         visualization: visualization ?? '',
-        ...(isTagType ? { tags: [], tagLock: false, linkedList: '' } : {}),
+        ...(isTagType ? { tags: [], tagLock: false } : {}),
         ...(isRefType ? { linkedTable: '' } : {}),
     };
 }
@@ -90,7 +90,6 @@ export function getAllColumns(dbId: string, tableName: string): ColumnDef[] {
         if (colDef.type === 'single_tag' || colDef.type === 'multi_tag') {
             baseDef.tags = Array.isArray(colDef.tags) ? colDef.tags : [];
             baseDef.tagLock = colDef.tagLock ?? false;
-            baseDef.linkedList = colDef.linkedList ?? '';
         }
         if (colDef.rule !== undefined) {
             baseDef.rule = colDef.rule;
@@ -122,7 +121,6 @@ export function getSingleColumn(dbId: string, tableName: string, columnName: str
     if (colDef.type === 'single_tag' || colDef.type === 'multi_tag') {
         result.tags = Array.isArray(colDef.tags) ? colDef.tags : [];
         result.tagLock = colDef.tagLock ?? false;
-        result.linkedList = colDef.linkedList ?? '';
     }
     if (colDef.rule !== undefined) {
         result.rule = colDef.rule;
@@ -179,7 +177,7 @@ export function updateColumnNameOrType(
             hidden: currentDef.hidden ?? false,
             index: currentDef.index ?? -1,
             visualization: currentDef.visualization ?? '',
-            ...(isTagType ? { tags: [] as TagDef[], tagLock: false, linkedList: '' } : {}),
+            ...(isTagType ? { tags: [] as TagDef[], tagLock: false } : {}),
             ...(newType === 'custom' ? { rule: currentDef.rule ?? '' } : {}),
             ...(isRefType ? { linkedTable: '' } : {}),
         };
@@ -256,8 +254,6 @@ export function updateColumnVisualization(
 
 /**
  * Sets tagLock on a single_tag or multi_tag column.
- * Cannot be called while the column is linked to a GlobalTagList
- * (link controls the lock automatically).
  */
 export function updateTagLock(
     dbId: string,
@@ -273,8 +269,6 @@ export function updateTagLock(
     if (!col) throw new Error(`Column '${columnName}' not found.`);
     if (col.type !== 'single_tag' && col.type !== 'multi_tag')
         throw new Error(`tagLock only applies to single_tag / multi_tag columns.`);
-    if (col.linkedList)
-        throw new Error(`Column '${columnName}' is linked to a GlobalTagList. Unlink it first to change tagLock.`);
 
     col.tagLock = locked;
     metadata.modifiedAt = new Date().toISOString();

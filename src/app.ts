@@ -7,7 +7,6 @@ import rowRouter from './routes/row';
 import recoveryRouter from './routes/recovery';
 import richTextRouter from './routes/richtext';
 import transferRouter from './routes/transfer';
-import tagListRouter from './routes/taglist';
 import galleryRouter from './routes/gallery';
 
 const app = express();
@@ -20,7 +19,6 @@ app.use('/api/database', columnRouter);
 app.use('/api/database', rowRouter);
 app.use('/api/database', recoveryRouter);
 app.use('/api/database', transferRouter);
-app.use('/api/database', tagListRouter);
 app.use('/api/database', galleryRouter);
 app.use('/api/richtext', richTextRouter);
 

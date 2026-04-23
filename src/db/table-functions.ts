@@ -178,7 +178,6 @@ export function getTable(
         if (colType === 'single_tag' || colType === 'multi_tag') {
             result.tags = isObj && Array.isArray(metaCol.tags) ? metaCol.tags : [];
             result.tagLock = isObj ? metaCol.tagLock ?? false : false;
-            result.linkedList = isObj ? metaCol.linkedList ?? '' : '';
         }
         if (colType === 'custom' && isObj && metaCol.rule !== undefined) {
             result.rule = metaCol.rule;

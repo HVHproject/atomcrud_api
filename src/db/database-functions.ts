@@ -1,6 +1,5 @@
 import Database from 'better-sqlite3';
 import fs from 'fs';
-import path from 'path';
 import { DatabaseMetadata } from '../types/types';
 import { columnTypeMap } from '../utils/type-mapping';
 import { DB_FOLDER, getDbPaths } from '../utils/db-paths';
@@ -55,7 +54,6 @@ export function createDatabase(displayName: string): { id: string; filePath: str
         modifiedAt: new Date(timestamp).toISOString(),
         description: "",
         hidden: false,
-        globalTagLists: {},
         tables: {
             entries: {
                 hidden: false,
