@@ -1,5 +1,5 @@
 import express from 'express';
-import { createColumn, deleteColumn, getAllColumns, getSingleColumn, moveColumnIndex, registerTag, swapColumnIndex, unregisterTag, updateColumnNameOrType, updateColumnRule, updateColumnVisibility, updateColumnVisualization, updateTagLock } from '../db/column-functions';
+import { createColumn, deleteColumn, getAllColumns, getSingleColumn, moveColumnIndex, registerTag, swapColumnIndex, unregisterTag, updateColumnNameOrType, updateColumnRequired, updateColumnRule, updateColumnVisibility, updateColumnVisualization, updateTagLock } from '../db/column-functions';
 import { setTableRefTarget } from '../db/tableref-functions';
 
 const router = express.Router({ mergeParams: true });
@@ -199,6 +199,21 @@ router.patch('/:dbId/table/:tableName/column/:columnName/visualization', (req, r
     }
     try {
         const updated = updateColumnVisualization(dbId, tableName, columnName, visualization);
+        res.json({ column: updated });
+    } catch (err) {
+        res.status(400).json({ error: (err as Error).message });
+    }
+});
+
+// PATCH set required level on a column
+router.patch('/:dbId/table/:tableName/column/:columnName/required', (req, res) => {
+    const { dbId, tableName, columnName } = req.params;
+    const { required } = req.body;
+    if (required !== 'yes' && required !== 'soft yes' && required !== 'no') {
+        return res.status(400).json({ error: '"required" must be "yes", "soft yes", or "no"' });
+    }
+    try {
+        const updated = updateColumnRequired(dbId, tableName, columnName, required);
         res.json({ column: updated });
     } catch (err) {
         res.status(400).json({ error: (err as Error).message });

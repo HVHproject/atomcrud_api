@@ -24,6 +24,7 @@ export interface ColumnDef {
     visualization?: string; // front-end display hint / display column name for table_ref
     tagLock?: boolean;     // for single_tag / multi_tag: prevents adding/removing tags when true
     linkedTable?: string;  // for table_ref / table_ref_many: target table name within this database
+    required?: 'yes' | 'soft yes' | 'no';
 }
 
 export interface Column {
@@ -59,6 +60,7 @@ export interface DatabaseMetadata {
                     visualization?: string;
                     tagLock?: boolean;
                     linkedTable?: string;
+                    required?: 'yes' | 'soft yes' | 'no';
                 };
             };
         };

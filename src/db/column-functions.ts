@@ -51,6 +51,7 @@ export function createColumn(
         hidden,
         index: assignedIndex,
         visualization: visualization ?? '',
+        required: 'no',
         ...(isTagType ? { tags: [] as TagDef[], tagLock: false } : {}),
         ...(customType === 'custom' ? { rule: '' } : {}),
         ...(isRefType ? { linkedTable: '' } : {}),
@@ -65,6 +66,7 @@ export function createColumn(
         hidden,
         index: assignedIndex,
         visualization: visualization ?? '',
+        required: 'no' as const,
         ...(isTagType ? { tags: [], tagLock: false } : {}),
         ...(isRefType ? { linkedTable: '' } : {}),
     };
@@ -86,6 +88,7 @@ export function getAllColumns(dbId: string, tableName: string): ColumnDef[] {
             hidden: colDef.hidden ?? false,
             index: typeof colDef.index === 'number' ? colDef.index : -1,
             visualization: colDef.visualization ?? '',
+            required: colDef.required ?? 'no',
         };
         if (colDef.type === 'single_tag' || colDef.type === 'multi_tag') {
             baseDef.tags = Array.isArray(colDef.tags) ? colDef.tags : [];
@@ -117,6 +120,7 @@ export function getSingleColumn(dbId: string, tableName: string, columnName: str
         hidden: colDef.hidden ?? false,
         index: typeof colDef.index === 'number' ? colDef.index : -1,
         visualization: colDef.visualization ?? '',
+        required: colDef.required ?? 'no',
     };
     if (colDef.type === 'single_tag' || colDef.type === 'multi_tag') {
         result.tags = Array.isArray(colDef.tags) ? colDef.tags : [];
@@ -177,6 +181,7 @@ export function updateColumnNameOrType(
             hidden: currentDef.hidden ?? false,
             index: currentDef.index ?? -1,
             visualization: currentDef.visualization ?? '',
+            required: currentDef.required ?? 'no',
             ...(isTagType ? { tags: [] as TagDef[], tagLock: false } : {}),
             ...(newType === 'custom' ? { rule: currentDef.rule ?? '' } : {}),
             ...(isRefType ? { linkedTable: '' } : {}),
@@ -434,6 +439,29 @@ export function updateColumnRule(
     column.rule = rule;
     metadata.modifiedAt = new Date().toISOString();
     fs.writeFileSync(metaPath, JSON.stringify(metadata, null, 2));
+}
+
+// Sets the required level on a column
+export function updateColumnRequired(
+    dbId: string,
+    tableName: string,
+    rawName: string,
+    required: 'yes' | 'soft yes' | 'no'
+): ColumnDef {
+    const columnName = normalizeName(rawName);
+    const { metaPath } = getDbPaths(dbId);
+    if (!fs.existsSync(metaPath)) throw new Error(`Metadata for '${dbId}' not found.`);
+
+    const metadata: DatabaseMetadata = JSON.parse(fs.readFileSync(metaPath, 'utf-8'));
+    const columns = metadata.tables?.[tableName]?.columns;
+    if (!columns?.[columnName])
+        throw new Error(`Column '${columnName}' not found in metadata.`);
+
+    columns[columnName].required = required;
+    metadata.modifiedAt = new Date().toISOString();
+    fs.writeFileSync(metaPath, JSON.stringify(metadata, null, 2));
+
+    return getSingleColumn(dbId, tableName, columnName);
 }
 
 // Deletes an unprotected column

@@ -174,6 +174,7 @@ export function getTable(
             hidden: isObj ? metaCol.hidden ?? false : false,
             index: isObj && typeof metaCol.index === 'number' ? metaCol.index : -1,
             visualization: isObj ? metaCol.visualization ?? '' : '',
+            required: isObj ? metaCol.required ?? 'no' : 'no',
         };
         if (colType === 'single_tag' || colType === 'multi_tag') {
             result.tags = isObj && Array.isArray(metaCol.tags) ? metaCol.tags : [];
